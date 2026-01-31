@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-import PIL import Image
+from PIL import Image
 import io
 
 
@@ -57,5 +57,6 @@ async def process_image(file: UploadFile = File(...)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
