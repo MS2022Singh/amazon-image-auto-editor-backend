@@ -4,4 +4,5 @@ pillow
 opencv-python-headless
 python-multipart
 numpy
-rembg
+rembg==2.0.50
+onnxruntime
