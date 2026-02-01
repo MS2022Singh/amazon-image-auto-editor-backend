@@ -2,7 +2,6 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from PIL import Image
-from rembg import remove
 from io import BytesIO
 import io
 
@@ -22,8 +21,9 @@ app.add_middleware(
 # -----------------------------
 # COMMON IMAGE PROCESS FUNCTION
 # -----------------------------
-def make_amazon_white_bg(image_bytes: bytes) -> Image.Image:
-    global session
+def make_amazon_white_bg(image_bytes: bytes):
+    from rembg import remove   # 👈 yahin import
+    ...
 
     if session is None:
         from rembg import new_session
@@ -86,6 +86,7 @@ async def process_image(file: UploadFile = File(...)):
         media_type="image/jpeg",
         headers={"Content-Disposition": "inline; filename=amazon.jpg"}
     )
+
 
 
 
