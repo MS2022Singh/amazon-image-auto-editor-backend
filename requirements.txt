@@ -3,5 +3,6 @@ uvicorn[standard]
 pillow
 python-multipart
 numpy
-onnxruntime==1.15.1
+onnxruntime==1.16.3
 rembg
+
