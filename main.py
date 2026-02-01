@@ -30,7 +30,7 @@ def make_amazon_white_bg(image_bytes: bytes) -> Image.Image:
         session = new_session("u2netp")
 
     try:
-        cutout = remove(image_bytes, session=session)
+        cutout = remove(image_bytes)
 
         img = Image.open(BytesIO(cutout)).convert("RGBA")
         white_bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
@@ -47,7 +47,7 @@ def make_amazon_white_bg(image_bytes: bytes) -> Image.Image:
 # -----------------------------
 @app.get("/")
 def root():
-    return {"status": "Backend is running"}
+    return {"status": "ok"}
 
 
 # -----------------------------
@@ -86,6 +86,7 @@ async def process_image(file: UploadFile = File(...)):
         media_type="image/jpeg",
         headers={"Content-Disposition": "inline; filename=amazon.jpg"}
     )
+
 
 
 
