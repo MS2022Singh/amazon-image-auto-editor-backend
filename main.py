@@ -72,23 +72,21 @@ async def preview_image(file: UploadFile = File(...)):
 # -----------------------------
 # DOWNLOAD ENDPOINT
 # -----------------------------
-@app.post("/process/download")
-async def download_image(file: UploadFile = File(...)):
+@app.post("/process")
+async def process_image(file: UploadFile = File(...)):
     image_bytes = await file.read()
-
     final_img = make_amazon_white_bg(image_bytes)
 
     buf = BytesIO()
     final_img.save(buf, format="JPEG", quality=95)
     buf.seek(0)
 
-    return Response(
-        content=buf.getvalue(),
+    return StreamingResponse(
+        buf,
         media_type="image/jpeg",
-        headers={
-            "Content-Disposition": "attachment; filename=amazon_ready.jpg"
-        }
+        headers={"Content-Disposition": "inline; filename=amazon.jpg"}
     )
+
 
 
 
