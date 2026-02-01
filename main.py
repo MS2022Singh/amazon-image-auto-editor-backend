@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.responses import Response
 from PIL import Image
-from rembg import remove
+from rembg import remove, new_session
+session = new_session("u2netp") # lightweight model
 from io import BytesIO
 import io
 
@@ -22,7 +23,7 @@ app.add_middleware(
 # -----------------------------
 def make_amazon_white_bg(image_bytes: bytes) -> Image.Image:
     # Remove background
-    cutout = remove(image_bytes)
+    cutout = remove(image_bytes, session=session)
 
     # Open as RGBA
     img = Image.open(BytesIO(cutout)).convert("RGBA")
@@ -83,6 +84,7 @@ async def download_image(file: UploadFile = File(...)):
             "Content-Disposition": "attachment; filename=amazon_ready.jpg"
         }
     )
+
 
 
 
