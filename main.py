@@ -22,6 +22,7 @@ app.add_middleware(
 # COMMON IMAGE PROCESS FUNCTION
 # -----------------------------
 def make_amazon_white_bg(image_bytes: bytes) -> Image.Image:
+try:
     # Remove background
     cutout = remove(image_bytes, session=session)
 
@@ -35,6 +36,9 @@ def make_amazon_white_bg(image_bytes: bytes) -> Image.Image:
     final_img = Image.alpha_composite(white_bg, img)
 
     return final_img.convert("RGB")
+
+except Exception as e:
+    raise RuntimeError(f"Image Processing failed: {str(e)}")
 
 
 # -----------------------------
@@ -84,6 +88,7 @@ async def download_image(file: UploadFile = File(...)):
             "Content-Disposition": "attachment; filename=amazon_ready.jpg"
         }
     )
+
 
 
 
