@@ -47,7 +47,7 @@ def make_amazon_white_bg(image_bytes: bytes) -> Image.Image:
 # -----------------------------
 @app.get("/")
 def root():
-    return {"status": "ok"}
+    return {"status": "alive"}
 
 
 # -----------------------------
@@ -86,6 +86,7 @@ async def process_image(file: UploadFile = File(...)):
         media_type="image/jpeg",
         headers={"Content-Disposition": "inline; filename=amazon.jpg"}
     )
+
 
 
 
