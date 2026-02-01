@@ -3,8 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.responses import Response
 from PIL import Image
-from rembg import remove, new_session
-session = new_session("u2netp") # lightweight model
+from rembg import remove
+session = none
 from io import BytesIO
 import io
 
@@ -22,6 +22,10 @@ app.add_middleware(
 # COMMON IMAGE PROCESS FUNCTION
 # -----------------------------
 def make_amazon_white_bg(image_bytes: bytes) -> Image.Image:
+    global session
+    if session is None:
+        from rembg import new_session
+        session = new_session("u2netp")
 try:
     # Remove background
     cutout = remove(image_bytes, session=session)
@@ -88,6 +92,7 @@ async def download_image(file: UploadFile = File(...)):
             "Content-Disposition": "attachment; filename=amazon_ready.jpg"
         }
     )
+
 
 
 
