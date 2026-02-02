@@ -1,8 +1,6 @@
 fastapi
-uvicorn[standard]
-pillow
+uvicorn
 python-multipart
-numpy
-onnxruntime==1.16.3
-rembg
+pillow
+
 
