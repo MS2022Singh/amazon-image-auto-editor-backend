@@ -1,5 +1,8 @@
 fastapi
 uvicorn
 pillow
+requests
+python-multipart
 rembg
 onnxruntime
+
