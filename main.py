@@ -5,43 +5,55 @@ import io
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
+
 @app.get("/")
 def root():
     return {"status": "ok"}
 
-def convert_to_white_background(image_bytes: bytes) -> bytes:
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
 
-    white_bg = Image.new("RGBA", image.size, (255, 255, 255, 255))
-    white_bg.paste(image, (0, 0), image)
+def place_on_white_canvas(image_bytes: bytes, canvas_size=2000) -> bytes:
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
 
-    final_image = white_bg.convert("RGB")
+    gray = img.convert("L")
+    bw = gray.point(lambda x: 0 if x > 245 else 255, '1')
 
-    output = io.BytesIO()
-    final_image.save(output, format="JPEG", quality=95)
-    output.seek(0)
+    bbox = bw.getbbox()
+    if bbox:
+        img = img.crop(bbox)
 
-    return output.read()
+    canvas = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 255))
+    img.thumbnail((int(canvas_size * 0.9), int(canvas_size * 0.9)))
+
+    x = (canvas_size - img.width) // 2
+    y = (canvas_size - img.height) // 2
+    canvas.paste(img, (x, y), img)
+
+    final = canvas.convert("RGB")
+    out = io.BytesIO()
+    final.save(out, format="JPEG", quality=95)
+    out.seek(0)
+
+    return out.read()
+
 
 @app.post("/process/preview")
 async def preview_image(file: UploadFile = File(...)):
     image_bytes = await file.read()
-    processed = convert_to_white_background(image_bytes)
-
     return StreamingResponse(
-        io.BytesIO(processed),
-        media_type="image/jpeg"
+        io.BytesIO(image_bytes),
+        media_type=file.content_type
     )
+
 
 @app.post("/process")
 async def process_image(file: UploadFile = File(...)):
     image_bytes = await file.read()
-    processed = convert_to_white_background(image_bytes)
+    processed = place_on_white_canvas(image_bytes)
 
     return StreamingResponse(
         io.BytesIO(processed),
         media_type="image/jpeg",
         headers={
-            "Content-Disposition": f"attachment; filename=processed_{file.filename}"
+            "Content-Disposition": f"attachment; filename=amazon_{file.filename}"
         }
     )
