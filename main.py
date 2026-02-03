@@ -1,148 +1,76 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import StreamingResponse
-from PIL import Image, ImageFilter
+from PIL import Image
 import io
 
 app = FastAPI(title="Amazon Image Auto Editor")
-
 
 @app.get("/")
 def root():
     return {"status": "ok"}
 
 
-# -------------------------------------------------
-# FORCE PURE WHITE BACKGROUND (AMAZON SAFE)
-# -------------------------------------------------
-def force_pure_white(img: Image.Image, mask: Image.Image) -> Image.Image:
-    img = img.convert("RGB")
-    pixels = img.load()
-    mask_px = mask.load()
-
-    w, h = img.size
-    for y in range(h):
-        for x in range(w):
-            if mask_px[x, y] == 0:  # background
-                pixels[x, y] = (255, 255, 255)
-
-    return img
-
-
-# -------------------------------------------------
-# OPTIONAL SOFT SHADOW (NON-AMAZON)
-# -------------------------------------------------
-def add_soft_shadow(canvas: Image.Image) -> Image.Image:
-    shadow = canvas.copy().convert("L")
-    shadow = shadow.filter(ImageFilter.GaussianBlur(radius=8))
-
-    shadow_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 70))
-    shadow_layer.putalpha(shadow)
-
-    base = Image.new("RGBA", canvas.size, (255, 255, 255, 255))
-    base = Image.alpha_composite(base, shadow_layer)
-    base = Image.alpha_composite(base, canvas)
-
-    return base
-
-
-# -------------------------------------------------
-# CORE PROCESSOR
-# -------------------------------------------------
-def place_on_white_canvas(
-    image_bytes: bytes,
-    canvas_size: int = 2000,
-    shadow: bool = False
-) -> bytes:
-
+def place_on_white_canvas(image_bytes: bytes, canvas_size=2000) -> bytes:
     img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
 
     # --- PRODUCT MASK ---
     gray = img.convert("L")
-    mask = gray.point(lambda x: 255 if x < 245 else 0, "L")
+    bw = gray.point(lambda x: 255 if x < 245 else 0, '1')  # product = white
 
-    bbox = mask.getbbox()
+    bbox = bw.getbbox()
     if bbox:
         img = img.crop(bbox)
-        mask = mask.crop(bbox)
+        bw = bw.crop(bbox)
 
-    # --- SCALE (70% RULE) ---
+    # --- SCALE (Amazon safe 70%) ---
     target = int(canvas_size * 0.7)
     w, h = img.size
     scale = target / max(w, h)
+    img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    bw = bw.resize(img.size, Image.NEAREST)
 
-    new_w = int(w * scale)
-    new_h = int(h * scale)
+    # --- PURE WHITE CANVAS ---
+    canvas = Image.new("RGB", (canvas_size, canvas_size), (255, 255, 255))
 
-    img = img.resize((new_w, new_h), Image.LANCZOS)
-    mask = mask.resize((new_w, new_h), Image.LANCZOS)
+    x = (canvas_size - img.width) // 2
+    y = (canvas_size - img.height) // 2
 
-    # --- WHITE CANVAS ---
-    canvas = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 255))
-    canvas_mask = Image.new("L", (canvas_size, canvas_size), 0)
+    # --- FORCE PURE WHITE BACKGROUND ---
+    img_rgb = img.convert("RGB")
+    canvas_px = canvas.load()
+    img_px = img_rgb.load()
+    mask_px = bw.load()
 
-    x = (canvas_size - new_w) // 2
-    y = (canvas_size - new_h) // 2
+    for iy in range(img.height):
+        for ix in range(img.width):
+            if mask_px[ix, iy]:  # product pixel
+                canvas_px[x + ix, y + iy] = img_px[ix, iy]
+            # else: background stays 255,255,255
 
-    canvas.paste(img, (x, y), img)
-    canvas_mask.paste(mask, (x, y))
-
-    # --- FORCE PURE WHITE ---
-    final = force_pure_white(canvas, canvas_mask)
-
-    # --- OPTIONAL SHADOW ---
-    if shadow:
-        final = add_soft_shadow(final.convert("RGBA")).convert("RGB")
-
-    # --- OUTPUT JPEG ---
     out = io.BytesIO()
-    final.save(out, format="JPEG", quality=95)
+    canvas.save(out, format="JPEG", quality=95, subsampling=0)
     out.seek(0)
-
     return out.read()
 
 
-# -------------------------------------------------
-# PREVIEW (RAW IMAGE)
-# -------------------------------------------------
 @app.post("/process/preview")
 async def preview_image(file: UploadFile = File(...)):
+    image_bytes = await file.read()
     return StreamingResponse(
-        io.BytesIO(await file.read()),
+        io.BytesIO(image_bytes),
         media_type=file.content_type
     )
 
 
-# -------------------------------------------------
-# AMAZON SAFE ENDPOINT (NO SHADOW)
-# -------------------------------------------------
 @app.post("/process")
 async def process_image(file: UploadFile = File(...)):
-    processed = place_on_white_canvas(
-        await file.read(),
-        shadow=False
-    )
+    image_bytes = await file.read()
+    processed = place_on_white_canvas(image_bytes)
+
     return StreamingResponse(
         io.BytesIO(processed),
         media_type="image/jpeg",
         headers={
             "Content-Disposition": f"attachment; filename=amazon_{file.filename}"
         }
-    )
-
-
-# -------------------------------------------------
-# CUSTOM ENDPOINT (OPTIONAL SHADOW)
-# -------------------------------------------------
-@app.post("/process/custom")
-async def process_custom_image(
-    file: UploadFile = File(...),
-    shadow: bool = False
-):
-    processed = place_on_white_canvas(
-        await file.read(),
-        shadow=shadow
-    )
-    return StreamingResponse(
-        io.BytesIO(processed),
-        media_type="image/jpeg"
     )
