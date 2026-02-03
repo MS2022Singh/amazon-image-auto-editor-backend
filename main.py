@@ -71,3 +71,15 @@ async def process_image(file: UploadFile = File(...)):
             "Content-Disposition": f"attachment; filename=amazon_{file.filename}"
         },
     )
+
+@app.post("/process/preview")
+async def preview_image(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+
+    transparent = preview = remove_bg(image_bytes)
+    final_image = amazon_ready_image(transparent)
+
+    return StreamingResponse(
+        io.BytesIO(final_image),
+        media_type="image/jpeg"
+    )
