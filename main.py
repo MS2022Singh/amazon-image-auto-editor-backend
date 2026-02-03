@@ -53,6 +53,17 @@ def amazon_ready_image(png_bytes: bytes, canvas_size=2000) -> bytes:
 
     return out.read()
 
+@app.post("/process/preview")
+async def preview_image(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+
+    transparent = preview = remove_bg(image_bytes)
+    final_image = amazon_ready_image(transparent)
+
+    return StreamingResponse(
+        io.BytesIO(final_image),
+        media_type="image/jpeg"
+    )
 
 @app.post("/process")
 async def process_image(file: UploadFile = File(...)):
@@ -72,14 +83,4 @@ async def process_image(file: UploadFile = File(...)):
         },
     )
 
-@app.post("/process/preview")
-async def preview_image(file: UploadFile = File(...)):
-    image_bytes = await file.read()
 
-    transparent = preview = remove_bg(image_bytes)
-    final_image = amazon_ready_image(transparent)
-
-    return StreamingResponse(
-        io.BytesIO(final_image),
-        media_type="image/jpeg"
-    )
