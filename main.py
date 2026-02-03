@@ -10,6 +10,17 @@ app = FastAPI(title="Amazon Image Auto Editor")
 def root():
     return {"status": "ok"}
 
+def soften_shadow(img: Image.Image) -> Image.Image:
+    shadow = img.copy()
+
+    # Make shadow lighter
+    shadow = shadow.point(lambda p: min(255, int(p * 1.15)))
+
+    # Slight blur for softness
+    shadow = shadow.filter(ImageFilter.GaussianBlur(radius=3))
+
+    return shadow
+
 
 def place_on_white_canvas(image_bytes: bytes, canvas_size=2000) -> bytes:
     img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
@@ -37,6 +48,11 @@ def place_on_white_canvas(image_bytes: bytes, canvas_size=2000) -> bytes:
     x = (canvas_size - new_w) // 2
     y = (canvas_size - new_h) // 2
     canvas.paste(img, (x, y), img)
+
+    from PIL import ImageFilter
+
+canvas = soften_shadow(canvas)
+
 
     # Final JPEG
     final = canvas.convert("RGB")
@@ -72,5 +88,6 @@ async def process_image(file: UploadFile = File(...)):
             "Content-Disposition": f"attachment; filename=amazon_{file.filename}"
         }
     )
+
 
 
