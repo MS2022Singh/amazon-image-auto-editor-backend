@@ -39,10 +39,13 @@ def place_on_white_canvas(image_bytes: bytes, canvas_size=2000) -> bytes:
 @app.post("/process/preview")
 async def preview_image(file: UploadFile = File(...)):
     image_bytes = await file.read()
+    processed = place_on_white_canvas(image_bytes)
+
     return StreamingResponse(
-        io.BytesIO(image_bytes),
-        media_type=file.content_type
+        io.BytesIO(processed),
+        media_type="image/jpeg"
     )
+
 
 
 @app.post("/process")
@@ -57,3 +60,4 @@ async def process_image(file: UploadFile = File(...)):
             "Content-Disposition": f"attachment; filename=amazon_{file.filename}"
         }
     )
+
