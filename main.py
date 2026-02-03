@@ -83,4 +83,44 @@ async def process_image(file: UploadFile = File(...)):
         },
     )
 
+def amazon_ready_image(
+    transparent_bytes: bytes,
+    canvas_size: int = 2000,
+    category: str = "jewellery"
+) -> bytes:
+    product = Image.open(io.BytesIO(transparent_bytes)).convert("RGBA")
+
+    pw, ph = product.size
+
+    # Category-based fill ratio
+    CATEGORY_FILL = {
+        "jewellery": 0.60,   # small products
+        "watch": 0.65,
+        "shoe": 0.80,
+        "bag": 0.85,
+        "default": 0.85
+    }
+
+    fill_ratio = CATEGORY_FILL.get(category, CATEGORY_FILL["default"])
+
+    max_side = int(canvas_size * fill_ratio)
+
+    scale = min(max_side / pw, max_side / ph)
+
+    new_size = (int(pw * scale), int(ph * scale))
+    product = product.resize(new_size, Image.LANCZOS)
+
+    canvas = Image.new("RGB", (canvas_size, canvas_size), (255, 255, 255))
+
+    x = (canvas_size - product.width) // 2
+    y = (canvas_size - product.height) // 2
+
+    canvas.paste(product, (x, y), product)
+
+    out = io.BytesIO()
+    canvas.save(out, format="JPEG", quality=95, subsampling=0)
+    out.seek(0)
+
+    return out.read()
+
 
