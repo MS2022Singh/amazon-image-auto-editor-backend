@@ -11,96 +11,55 @@ def root():
     return {"status": "ok"}
 
 
-# ==============================
-# CORE IMAGE PROCESSING FUNCTION
-# ==============================
-def process_for_amazon(image_bytes: bytes, canvas_size: int = 2000) -> bytes:
-    """
-    1. Remove background completely
-    2. Keep only product
-    3. Place on pure white canvas
-    4. Amazon 70% size rule
-    """
+def remove_background(image_bytes: bytes) -> bytes:
+    # Lazy import (VERY IMPORTANT for Railway)
+    from rembg import remove
+    return remove(image_bytes)
 
-    # Load image
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
 
-    # ------------------------------
-    # STEP 1: TRUE BACKGROUND REMOVAL
-    # ------------------------------
-    gray = img.convert("L")
+def process_for_amazon(image_bytes: bytes, canvas_size=2000) -> bytes:
+    # 1️⃣ Remove background (AI)
+    bg_removed = remove_background(image_bytes)
 
-    # Product = white (255), Background = black (0)
-    mask = gray.point(lambda x: 255 if x < 245 else 0)
+    img = Image.open(io.BytesIO(bg_removed)).convert("RGBA")
 
-    # Apply transparency
-    img.putalpha(mask)
-
-    # Crop to product bounds
-    bbox = mask.getbbox()
+    # 2️⃣ Crop to product
+    bbox = img.getbbox()
     if bbox:
         img = img.crop(bbox)
 
-    # ------------------------------
-    # STEP 2: AMAZON SCALE (70%)
-    # ------------------------------
-    target_size = int(canvas_size * 0.7)
+    # 3️⃣ Amazon 70% rule
+    target = int(canvas_size * 0.7)
     w, h = img.size
-    scale = target_size / max(w, h)
-    new_w = int(w * scale)
-    new_h = int(h * scale)
+    scale = target / max(w, h)
+    img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
-    img = img.resize((new_w, new_h), Image.LANCZOS)
-
-    # ------------------------------
-    # STEP 3: PURE WHITE CANVAS
-    # ------------------------------
+    # 4️⃣ Pure white background
     canvas = Image.new("RGB", (canvas_size, canvas_size), (255, 255, 255))
-
-    x = (canvas_size - new_w) // 2
-    y = (canvas_size - new_h) // 2
-
-    # Paste using alpha mask (clean edges)
+    x = (canvas_size - img.width) // 2
+    y = (canvas_size - img.height) // 2
     canvas.paste(img, (x, y), img)
 
-    # ------------------------------
-    # STEP 4: FINAL JPEG EXPORT
-    # ------------------------------
+    # 5️⃣ Final JPEG
     out = io.BytesIO()
-    canvas.save(out, format="JPEG", quality=95, subsampling=0)
+    canvas.save(out, "JPEG", quality=95, subsampling=0)
     out.seek(0)
-
     return out.read()
 
 
-# ==================
-# PREVIEW ENDPOINT
-# ==================
 @app.post("/process/preview")
 async def preview_image(file: UploadFile = File(...)):
-    image_bytes = await file.read()
-
-    processed = process_for_amazon(image_bytes)
-
-    return StreamingResponse(
-        io.BytesIO(processed),
-        media_type="image/jpeg"
-    )
+    data = await file.read()
+    result = process_for_amazon(data)
+    return StreamingResponse(io.BytesIO(result), media_type="image/jpeg")
 
 
-# ==================
-# DOWNLOAD ENDPOINT
-# ==================
 @app.post("/process")
 async def process_image(file: UploadFile = File(...)):
-    image_bytes = await file.read()
-
-    processed = process_for_amazon(image_bytes)
-
+    data = await file.read()
+    result = process_for_amazon(data)
     return StreamingResponse(
-        io.BytesIO(processed),
+        io.BytesIO(result),
         media_type="image/jpeg",
-        headers={
-            "Content-Disposition": f"attachment; filename=amazon_{file.filename}"
-        }
+        headers={"Content-Disposition": f"attachment; filename=amazon_{file.filename}"}
     )
