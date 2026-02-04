@@ -107,6 +107,43 @@ def amazon_ready_image(
 
     return out.read()
 
+def validate_amazon_image(image_bytes: bytes):
+    img = Image.open(io.BytesIO(image_bytes))
+    width, height = img.size
+
+    errors = []
+    warnings = []
+
+    # Size checks
+    if width < 1000 or height < 1000:
+        errors.append("Image size too small (min 1000x1000 required)")
+
+    if width != height:
+        errors.append("Image must be square")
+
+    # Background check (corner pixel)
+    pixel = img.getpixel((5, 5))
+    if pixel[:3] != (255, 255, 255):
+        warnings.append("Background is not pure white (#FFFFFF)")
+
+    # Product coverage estimation
+    non_white = sum(
+        1 for p in img.getdata()
+        if p[:3] != (255, 255, 255)
+    )
+    coverage = non_white / (width * height)
+
+    if coverage < 0.75:
+        warnings.append("Product appears too small in frame")
+
+    return {
+        "status": "fail" if errors else "pass",
+        "errors": errors,
+        "warnings": warnings,
+        "size": f"{width}x{height}",
+        "coverage_estimate": round(coverage * 100, 2)
+    }
+
 # -----------------------------
 # PREVIEW (NO DOWNLOAD)
 # -----------------------------
@@ -228,4 +265,5 @@ async def process_batch(files: list[UploadFile] = File(...)):
             "Content-Disposition": "attachment; filename=amazon_images.zip"
         }
     )
+
 
