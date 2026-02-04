@@ -142,3 +142,23 @@ async def process_image(
         }
     )
 
+@app.post("/process/preview")
+async def preview_image(
+    file: UploadFile = File(...),
+    category: str = "jewellery"
+):
+    image_bytes = await file.read()
+
+    transparent = remove_bg(image_bytes)
+    final_image = amazon_ready_image(
+        transparent,
+        category=category
+    )
+
+    # ⚠️ No Content-Disposition here
+    # so browser / Swagger can SHOW the image
+    return StreamingResponse(
+        io.BytesIO(final_image),
+        media_type="image/jpeg"
+    )
+
