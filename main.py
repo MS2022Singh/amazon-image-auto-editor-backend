@@ -144,12 +144,27 @@ def validate_amazon_image(image_bytes: bytes):
         "coverage_estimate": round(coverage * 100, 2)
     }
 
+def force_pure_white_background(img: Image.Image) -> Image.Image:
+    img = img.convert("RGBA")
+
+    pixels = img.load()
+    width, height = img.size
+
+    for y in range(height):
+        for x in range(width):
+            r, g, b, a = pixels[x, y]
+
+            # Shadow / gray detection
+            if a < 255 or (r < 245 or g < 245 or b < 245):
+                pixels[x, y] = (255, 255, 255, 255)
+
+    return img
+
 def auto_fix_amazon_image(image_bytes: bytes, canvas_size=2000) -> bytes:
     img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
 
     # Remove transparency on white
-    white_bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
-    img = Image.alpha_composite(white_bg, img)
+    img = force_pure_white_background(img)
 
     # Crop product area (non-white)
     gray = img.convert("L")
@@ -295,6 +310,7 @@ async def process_batch(files: list[UploadFile] = File(...)):
             "Content-Disposition": "attachment; filename=amazon_images.zip"
         }
     )
+
 
 
 
