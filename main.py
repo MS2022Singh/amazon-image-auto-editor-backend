@@ -205,3 +205,32 @@ async def validate_image(file: UploadFile = File(...)):
     image_bytes = await file.read()
     report = amazon_validator(image_bytes)
     return report
+
+import zipfile
+from fastapi.responses import StreamingResponse
+
+@app.post("/process/batch")
+async def process_batch(files: list[UploadFile] = File(...)):
+    zip_buffer = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for file in files:
+            image_bytes = await file.read()
+
+            transparent = remove_bg(image_bytes)
+            final_image = amazon_ready_image(transparent)
+
+            zipf.writestr(
+                f"amazon_{file.filename}",
+                final_image
+            )
+
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": "attachment; filename=amazon_images.zip"
+        }
+    )
