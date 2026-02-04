@@ -124,3 +124,21 @@ def amazon_ready_image(
     return out.read()
 
 
+@app.post("/process")
+async def process_image(
+    file: UploadFile = File(...),
+    category: str = "jewellery"
+):
+    image_bytes = await file.read()
+
+    transparent = remove_bg(image_bytes)
+    final_image = amazon_ready_image(transparent, category=category)
+
+    return StreamingResponse(
+        io.BytesIO(final_image),
+        media_type="image/jpeg",
+        headers={
+            "Content-Disposition": f"attachment; filename=amazon_{file.filename}"
+        }
+    )
+
