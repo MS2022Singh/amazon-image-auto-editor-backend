@@ -158,3 +158,50 @@ async def process_image(file: UploadFile = File(...)):
             "Content-Disposition": f"attachment; filename=amazon_{file.filename}"
         }
     )
+
+def amazon_validator(image_bytes: bytes):
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    w, h = img.size
+
+    # square check
+    square = w == h
+
+    # resolution
+    resolution_ok = w >= 1600 and h >= 1600
+
+    # background check (sample corners)
+    pixels = img.load()
+    corners = [
+        pixels[0, 0],
+        pixels[w-1, 0],
+        pixels[0, h-1],
+        pixels[w-1, h-1],
+    ]
+    background_white = all(
+        abs(r-255) < 3 and abs(g-255) < 3 and abs(b-255) < 3
+        for r, g, b in corners
+    )
+
+    amazon_safe = square and resolution_ok and background_white
+
+    warnings = []
+    if not square:
+        warnings.append("Image is not square")
+    if not resolution_ok:
+        warnings.append("Resolution below 1600x1600")
+    if not background_white:
+        warnings.append("Background is not pure white")
+
+    return {
+        "square": square,
+        "resolution_ok": resolution_ok,
+        "background_white": background_white,
+        "amazon_safe": amazon_safe,
+        "warnings": warnings,
+    }
+
+@app.post("/process/validate")
+async def validate_image(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+    report = amazon_validator(image_bytes)
+    return report
