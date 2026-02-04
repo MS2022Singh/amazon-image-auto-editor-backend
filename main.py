@@ -144,6 +144,36 @@ def validate_amazon_image(image_bytes: bytes):
         "coverage_estimate": round(coverage * 100, 2)
     }
 
+def auto_fix_amazon_image(image_bytes: bytes, canvas_size=2000) -> bytes:
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+
+    # Remove transparency on white
+    white_bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
+    img = Image.alpha_composite(white_bg, img)
+
+    # Crop product area (non-white)
+    gray = img.convert("L")
+    bw = gray.point(lambda x: 0 if x > 245 else 255, "1")
+    bbox = bw.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+
+    # Resize product to 85% of canvas
+    target = int(canvas_size * 0.85)
+    img.thumbnail((target, target), Image.LANCZOS)
+
+    # Create final canvas
+    canvas = Image.new("RGB", (canvas_size, canvas_size), (255, 255, 255))
+    x = (canvas_size - img.width) // 2
+    y = (canvas_size - img.height) // 2
+    canvas.paste(img, (x, y))
+
+    out = io.BytesIO()
+    canvas.save(out, format="JPEG", quality=95, subsampling=0)
+    out.seek(0)
+
+    return out.read()
+
 # -----------------------------
 # PREVIEW (NO DOWNLOAD)
 # -----------------------------
@@ -171,16 +201,16 @@ async def preview_image(
 # -----------------------------
 @app.post("/process")
 async def process_image(
-    file: UploadFile = File(...),
-    bg_color: str = "#FFFFFF"
+    file: UploadFile = File(...)
 ):
     image_bytes = await file.read()
 
-    transparent = remove_bg(image_bytes)
-    final_image = amazon_ready_image(
-        transparent,
-        bg_color=bg_color
-    )
+    report = validate_amazon_image(image_bytes)
+
+    if report["status"] == "fail" or report["warnings"]:
+        final_image = auto_fix_amazon_image(image_bytes)
+    else:
+        final_image = image_bytes
 
     return StreamingResponse(
         io.BytesIO(final_image),
@@ -265,5 +295,6 @@ async def process_batch(files: list[UploadFile] = File(...)):
             "Content-Disposition": "attachment; filename=amazon_images.zip"
         }
     )
+
 
 
