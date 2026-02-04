@@ -79,39 +79,33 @@ def calculate_fill_ratio(img: Image.Image) -> float:
 def amazon_ready_image(
     transparent_bytes: bytes,
     canvas_size: int = 2000,
-    background: str = "white",
+    bg_color: str = "#FFFFFF"
 ) -> bytes:
-
     product = Image.open(io.BytesIO(transparent_bytes)).convert("RGBA")
 
-    bbox = product.getbbox()
-    if bbox:
-        product = product.crop(bbox)
+    # Create background
+    if bg_color.startswith("#"):
+        bg_color = bg_color.lstrip("#")
+        r, g, b = tuple(int(bg_color[i:i+2], 16) for i in (0, 2, 4))
+        background = Image.new("RGBA", (canvas_size, canvas_size), (r, g, b, 255))
+    else:
+        background = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 255))
 
-    pw, ph = product.size
-    fill_ratio = calculate_fill_ratio(product)
-    max_side = int(canvas_size * fill_ratio)
-
-    scale = min(max_side / pw, max_side / ph)
-    new_size = (int(pw * scale), int(ph * scale))
-    product = product.resize(new_size, Image.LANCZOS)
-
-    bg_color = resolve_background(background)
-    canvas = Image.new("RGBA", (canvas_size, canvas_size), bg_color)
+    # Resize product (Amazon ~85% rule)
+    max_size = int(canvas_size * 0.85)
+    product.thumbnail((max_size, max_size), Image.LANCZOS)
 
     x = (canvas_size - product.width) // 2
     y = (canvas_size - product.height) // 2
-    canvas.paste(product, (x, y), product)
 
-    final = canvas.convert("RGB")
-    final = ImageEnhance.Sharpness(final).enhance(1.15)
-    final = ImageEnhance.Contrast(final).enhance(1.05)
+    background.paste(product, (x, y), product)
 
+    final = background.convert("RGB")
     out = io.BytesIO()
-    final.save(out, format="JPEG", quality=95, subsampling=0)
+    final.save(out, format="JPEG", quality=95)
     out.seek(0)
-    return out.read()
 
+    return out.read()
 
 # -----------------------------
 # PREVIEW (NO DOWNLOAD)
@@ -119,37 +113,37 @@ def amazon_ready_image(
 @app.post("/process/preview")
 async def preview_image(
     file: UploadFile = File(...),
-    bg: str = "white"
+    bg_color: str = "#FFFFFF"
 ):
     image_bytes = await file.read()
-    transparent = remove_bg(image_bytes)
 
-    final_image = amazon_ready_image(
+    transparent = remove_bg(image_bytes)
+    preview = amazon_ready_image(
         transparent,
-        background=bg
+        canvas_size=1200,
+        bg_color=bg_color
     )
 
     return StreamingResponse(
-        io.BytesIO(final_image),
+        io.BytesIO(preview),
         media_type="image/jpeg"
     )
-
 
 # -----------------------------
 # AMAZON FINAL DOWNLOAD
 # -----------------------------
 @app.post("/process")
-async def process_image(file: UploadFile = File(...)):
+async def process_image(
+    file: UploadFile = File(...),
+    bg_color: str = "#FFFFFF"
+):
     image_bytes = await file.read()
 
-    try:
-        transparent = remove_bg(image_bytes)
-        final_image = amazon_ready_image(
-            transparent,
-            background="white"  # 🔒 Amazon locked
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    transparent = remove_bg(image_bytes)
+    final_image = amazon_ready_image(
+        transparent,
+        bg_color=bg_color
+    )
 
     return StreamingResponse(
         io.BytesIO(final_image),
@@ -234,3 +228,4 @@ async def process_batch(files: list[UploadFile] = File(...)):
             "Content-Disposition": "attachment; filename=amazon_images.zip"
         }
     )
+
