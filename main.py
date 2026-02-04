@@ -72,6 +72,25 @@ def amazon_ready_image(
 
     return out.read()
 
+def calculate_fill_ratio(img: Image.Image) -> float:
+    """
+    Returns how much % of image is actual product (non-transparent)
+    """
+    alpha = img.split()[-1]
+    non_empty = sum(1 for p in alpha.getdata() if p > 10)
+    total = alpha.width * alpha.height
+
+    coverage = non_empty / total
+
+    # Smart clamps (Amazon-safe)
+    if coverage < 0.10:
+        return 0.92   # very small product → zoom more
+    elif coverage < 0.20:
+        return 0.88
+    elif coverage < 0.35:
+        return 0.82
+    else:
+        return 0.75   # big product → less zoom
 
 @app.post("/process/preview")
 async def preview_image(file: UploadFile = File(...)):
@@ -106,22 +125,18 @@ async def process_image(file: UploadFile = File(...)):
 def amazon_ready_image(
     transparent_bytes: bytes,
     canvas_size: int = 2000,
-    category: str = "jewellery"
+    
 ) -> bytes:
     product = Image.open(io.BytesIO(transparent_bytes)).convert("RGBA")
 
+    bbox = product.getbbox()
+    if bbox:
+        product = product.crop(bbox)
+
     pw, ph = product.size
 
-    # Category-based fill ratio
-    CATEGORY_FILL = {
-        "jewellery": 0.60,   # small products
-        "watch": 0.65,
-        "shoe": 0.80,
-        "bag": 0.85,
-        "default": 0.85
-    }
-
-    fill_ratio = CATEGORY_FILL.get(category, CATEGORY_FILL["default"])
+    # AUTO ZOOM DECISION
+    fill_ratio = calculate_fill_ratio(product)
 
     max_side = int(canvas_size * fill_ratio)
 
@@ -146,13 +161,11 @@ def amazon_ready_image(
 
 @app.post("/process")
 async def process_image(
-    file: UploadFile = File(...),
-    category: str = "jewellery"
-):
+    file: UploadFile = File(...)):
     image_bytes = await file.read()
 
     transparent = remove_bg(image_bytes)
-    final_image = amazon_ready_image(transparent, category=category)
+    final_image = amazon_ready_image(transparent)
 
     return StreamingResponse(
         io.BytesIO(final_image),
@@ -181,5 +194,6 @@ async def preview_image(
         io.BytesIO(final_image),
         media_type="image/jpeg"
     )
+
 
 
