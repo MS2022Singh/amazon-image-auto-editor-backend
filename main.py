@@ -125,8 +125,9 @@ async def process_image(file: UploadFile = File(...)):
 def amazon_ready_image(
     transparent_bytes: bytes,
     canvas_size: int = 2000,
-    
+    background: str = "white"
 ) -> bytes:
+    
     product = Image.open(io.BytesIO(transparent_bytes)).convert("RGBA")
 
     bbox = product.getbbox()
@@ -139,6 +140,10 @@ def amazon_ready_image(
     fill_ratio = calculate_fill_ratio(product)
 
     max_side = int(canvas_size * fill_ratio)
+    product.thumbnail((max_size, max_size), Image.LANCZOS)
+
+     bg_color = resolve_background(background)
+    canvas = Image.new("RGBA", (canvas_size, canvas_size), bg_color)
 
     scale = min(max_side / pw, max_side / ph)
 
@@ -152,41 +157,65 @@ def amazon_ready_image(
 
     canvas.paste(product, (x, y), product)
 
+    final = canvas.convert("RGB")
+    final = ImageEnhance.Sharpness(final).enhance(1.15)
+    final = ImageEnhance.Contrast(final).enhance(1.05)
+
     out = io.BytesIO()
     canvas.save(out, format="JPEG", quality=95, subsampling=0)
     out.seek(0)
 
     return out.read()
 
+def resolve_background(bg: str):
+    presets = {
+        "white": (255, 255, 255, 255),
+        "offwhite": (245, 245, 245, 255),
+        "lightgrey": (240, 240, 240, 255),
+    }
+
+    if bg.startswith("#") and len(bg) == 7:
+        r = int(bg[1:3], 16)
+        g = int(bg[3:5], 16)
+        b = int(bg[5:7], 16)
+        return (r, g, b, 255)
+
+    return presets.get(bg, (255, 255, 255, 255))
 
 @app.post("/process")
-async def process_image(
-    file: UploadFile = File(...)):
+async def process_image(file: UploadFile = File(...)):
     image_bytes = await file.read()
-
     transparent = remove_bg(image_bytes)
-    final_image = amazon_ready_image(transparent)
+
+    final_image = amazon_ready_image(
+        transparent,
+        background="white"   # 🔒 locked for Amazon
+    )
 
     return StreamingResponse(
         io.BytesIO(final_image),
-        media_type="image/jpeg",
-        headers={
-            "Content-Disposition": f"attachment; filename=amazon_{file.filename}"
-        }
+        media_type="image/jpeg"
     )
+
 
 @app.post("/process/preview")
 async def preview_image(
     file: UploadFile = File(...),
-    category: str = "jewellery"
+    bg: str = "white"
 ):
     image_bytes = await file.read()
-
     transparent = remove_bg(image_bytes)
+
     final_image = amazon_ready_image(
         transparent,
-        category=category
+        background=bg
     )
+
+    return StreamingResponse(
+        io.BytesIO(final_image),
+        media_type="image/jpeg"
+    )
+
 
     # ⚠️ No Content-Disposition here
     # so browser / Swagger can SHOW the image
@@ -194,6 +223,7 @@ async def preview_image(
         io.BytesIO(final_image),
         media_type="image/jpeg"
     )
+
 
 
 
