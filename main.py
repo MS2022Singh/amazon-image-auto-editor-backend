@@ -31,27 +31,47 @@ def remove_bg(image_bytes: bytes) -> bytes:
     return response.content  # PNG with transparency
 
 
-def amazon_ready_image(png_bytes: bytes, canvas_size=2000) -> bytes:
-    product = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+from PIL import Image, ImageEnhance, ImageFilter
+import io
 
-    # PURE WHITE CANVAS
-    canvas = Image.new("RGB", (canvas_size, canvas_size), (255, 255, 255))
+def amazon_ready_image(
+    transparent_bytes: bytes,
+    canvas_size: int = 2000,
+    fill_ratio: float = 0.88,   # 88% product coverage
+    sharpen: float = 1.15,      # subtle DSLR sharpness
+    contrast: float = 1.05
+) -> bytes:
 
-    # Resize product (Amazon rule: product ~85% frame)
-    max_size = int(canvas_size * 0.85)
+    product = Image.open(io.BytesIO(transparent_bytes)).convert("RGBA")
+
+    # --- Trim empty transparency ---
+    bbox = product.getbbox()
+    if bbox:
+        product = product.crop(bbox)
+
+    # --- Resize to fill Amazon frame ---
+    max_size = int(canvas_size * fill_ratio)
     product.thumbnail((max_size, max_size), Image.LANCZOS)
+
+    # --- White canvas ---
+    canvas = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 255))
 
     x = (canvas_size - product.width) // 2
     y = (canvas_size - product.height) // 2
-
-    # Paste WITHOUT shadow
     canvas.paste(product, (x, y), product)
 
+    final = canvas.convert("RGB")
+
+    # --- Pro polish ---
+    final = ImageEnhance.Sharpness(final).enhance(sharpen)
+    final = ImageEnhance.Contrast(final).enhance(contrast)
+
     out = io.BytesIO()
-    canvas.save(out, format="JPEG", quality=95, subsampling=0)
+    final.save(out, format="JPEG", quality=95, subsampling=0)
     out.seek(0)
 
     return out.read()
+
 
 @app.post("/process/preview")
 async def preview_image(file: UploadFile = File(...)):
@@ -161,4 +181,5 @@ async def preview_image(
         io.BytesIO(final_image),
         media_type="image/jpeg"
     )
+
 
