@@ -34,23 +34,44 @@ def remove_bg(image_bytes: bytes) -> bytes:
 
     return r.content  # transparent PNG
 
+def smart_crop_rgba(img: Image.Image) -> Image.Image:
+    """
+    Crop image to visible (non-transparent) product area
+    """
+    alpha = img.split()[-1]
+
+    # Convert alpha to binary mask
+    mask = alpha.point(lambda p: 255 if p > 10 else 0)
+
+    bbox = mask.getbbox()
+    if bbox:
+        return img.crop(bbox)
+
+    return img
+
 # -----------------------------
 # SHADOW FREE AMAZON COMPOSE
 # -----------------------------
 def compose_shadow_free_white(product_rgba: Image.Image, canvas=2000) -> Image.Image:
+    # 1️⃣ Smart crop first
+    product_rgba = smart_crop_rgba(product_rgba)
+
+    # 2️⃣ Create white canvas
     bg = Image.new("RGBA", (canvas, canvas), (255, 255, 255, 255))
 
+    # 3️⃣ Resize product (slightly more aggressive for jewellery)
     pw, ph = product_rgba.size
-    scale = min(canvas * 0.85 / pw, canvas * 0.85 / ph)
+    scale = min(canvas * 0.90 / pw, canvas * 0.90 / ph)
     product = product_rgba.resize(
         (int(pw * scale), int(ph * scale)), Image.LANCZOS
     )
 
-    # HARD alpha cleanup
+    # 4️⃣ HARD alpha cleanup (kill shadows completely)
     r, g, b, a = product.split()
     a = a.point(lambda p: 255 if p > 200 else 0)
     product = Image.merge("RGBA", (r, g, b, a))
 
+    # 5️⃣ Center placement
     x = (canvas - product.width) // 2
     y = (canvas - product.height) // 2
     bg.paste(product, (x, y), product)
@@ -149,3 +170,4 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=amazon_images.zip"}
     )
+
