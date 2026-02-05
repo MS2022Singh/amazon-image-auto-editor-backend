@@ -34,6 +34,28 @@ def remove_bg(image_bytes: bytes) -> bytes:
 
     return r.content  # transparent PNG
 
+def resolve_background(bg_color: str):
+    presets = {
+        "white": (255, 255, 255, 255),
+        "offwhite": (245, 245, 245, 255),
+        "lightgrey": (240, 240, 240, 255),
+        "black": (0, 0, 0, 255),
+    }
+
+    if not bg_color:
+        return (255, 255, 255, 255)
+
+    bg_color = bg_color.lower()
+
+    # HEX color support
+    if bg_color.startswith("#") and len(bg_color) == 7:
+        r = int(bg_color[1:3], 16)
+        g = int(bg_color[3:5], 16)
+        b = int(bg_color[5:7], 16)
+        return (r, g, b, 255)
+
+    return presets.get(bg_color, (255, 255, 255, 255))
+
 def smart_crop_rgba(img: Image.Image) -> Image.Image:
     """
     Crop image to visible (non-transparent) product area
@@ -53,7 +75,7 @@ def amazon_ready_image(
     transparent_bytes: bytes,
     canvas_size: int = 2000,
     fill_ratio: float = 0.88,   # sweet spot for Amazon
-    bg_color: str = "#FFFFFF"
+    bg_color: str = "white"
 ) -> bytes:
 
     product = Image.open(io.BytesIO(transparent_bytes)).convert("RGBA")
@@ -62,7 +84,8 @@ def amazon_ready_image(
     product = smart_crop_rgba(product)
 
     # STEP 2: create pure background
-    bg = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 255))
+    bg_rgba = resolve_background(bg_color)
+    background = Image.new("RGBA", (canvas_size, canvas_size), bg_rgba (255, 255, 255, 255))
 
     # STEP 3: auto scale
     pw, ph = product.size
@@ -164,12 +187,20 @@ async def preview(file: UploadFile = File(...)):
 # FINAL DOWNLOAD
 # -----------------------------
 @app.post("/process")
-async def process(file: UploadFile = File(...)):
+async def process_image(
+    file: UploadFile = File(...),
+    bg_color: str = "white"
+):
     image_bytes = await file.read()
-    final = amazon_process(image_bytes)
+
+    transparent = remove_bg(image_bytes)
+    final_image = amazon_ready_image(
+        transparent,
+        bg_color=bg_color
+    )
 
     return StreamingResponse(
-        io.BytesIO(final),
+        io.BytesIO(final_image),
         media_type="image/jpeg",
         headers={
             "Content-Disposition": f"attachment; filename=amazon_{file.filename}"
@@ -203,5 +234,6 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=amazon_images.zip"}
     )
+
 
 
