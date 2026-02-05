@@ -33,6 +33,29 @@ def remove_bg(image_bytes: bytes) -> bytes:
 
     return response.content  # transparent PNG
 
+def compose_shadow_free_white(product_rgba: Image.Image, canvas=2000) -> Image.Image:
+    # Step 1: pure white canvas
+    bg = Image.new("RGBA", (canvas, canvas), (255, 255, 255, 255))
+
+    # Step 2: center placement
+    pw, ph = product_rgba.size
+    scale = min(canvas * 0.85 / pw, canvas * 0.85 / ph)
+    new_size = (int(pw * scale), int(ph * scale))
+    product = product_rgba.resize(new_size, Image.LANCZOS)
+
+    x = (canvas - new_size[0]) // 2
+    y = (canvas - new_size[1]) // 2
+
+    # Step 3: HARD alpha cleanup (kills shadow)
+    r, g, b, a = product.split()
+    a = a.point(lambda p: 255 if p > 200 else 0)
+
+    product = Image.merge("RGBA", (r, g, b, a))
+
+    # Step 4: paste without shadow bleed
+    bg.paste(product, (x, y), product)
+
+    return bg.convert("RGB")
 
 # -----------------------------
 # BACKGROUND PRESETS
@@ -270,6 +293,11 @@ async def process_image(
             "Content-Disposition": f"attachment; filename=amazon_{file.filename}"
         }
     )
+transparent = remove_bg(image_bytes)
+
+img_rgba = Image.open(io.BytesIO(transparent)).convert("RGBA")
+
+final_img = compose_shadow_free_white(img_rgba)
 
 def amazon_validator(image_bytes: bytes):
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -346,6 +374,7 @@ async def process_batch(files: list[UploadFile] = File(...)):
             "Content-Disposition": "attachment; filename=amazon_images.zip"
         }
     )
+
 
 
 
