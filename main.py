@@ -49,6 +49,39 @@ def smart_crop_rgba(img: Image.Image) -> Image.Image:
 
     return img
 
+def amazon_ready_image(
+    transparent_bytes: bytes,
+    canvas_size: int = 2000,
+    fill_ratio: float = 0.88,   # sweet spot for Amazon
+    bg_color: str = "#FFFFFF"
+) -> bytes:
+
+    product = Image.open(io.BytesIO(transparent_bytes)).convert("RGBA")
+
+    # STEP 1: smart crop (kills floating feel)
+    product = smart_crop_rgba(product)
+
+    # STEP 2: create pure background
+    bg = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 255))
+
+    # STEP 3: auto scale
+    pw, ph = product.size
+    max_dim = int(canvas_size * fill_ratio)
+    scale = min(max_dim / pw, max_dim / ph)
+    new_size = (int(pw * scale), int(ph * scale))
+    product = product.resize(new_size, Image.LANCZOS)
+
+    # STEP 4: center paste
+    x = (canvas_size - new_size[0]) // 2
+    y = (canvas_size - new_size[1]) // 2
+    bg.paste(product, (x, y), product)
+
+    final = bg.convert("RGB")
+    out = io.BytesIO()
+    final.save(out, format="JPEG", quality=95, subsampling=0)
+    out.seek(0)
+    return out.read()
+
 # -----------------------------
 # SHADOW FREE AMAZON COMPOSE
 # -----------------------------
@@ -170,4 +203,5 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=amazon_images.zip"}
     )
+
 
