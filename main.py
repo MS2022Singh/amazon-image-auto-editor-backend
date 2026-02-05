@@ -144,6 +144,42 @@ def validate_amazon_image(image_bytes: bytes):
         "coverage_estimate": round(coverage * 100, 2)
     }
 
+def validate_amazon_image(img: Image.Image) -> dict:
+    width, height = img.size
+
+    # Rule 1: size
+    if width < 1000 or height < 1000:
+        return {"valid": False, "reason": "Image size below 1000x1000"}
+
+    # Rule 2: background purity
+    pixels = img.load()
+    white_pixels = 0
+    total_pixels = width * height
+
+    for y in range(height):
+        for x in range(width):
+            r, g, b = pixels[x, y][:3]
+            if r > 250 and g > 250 and b > 250:
+                white_pixels += 1
+
+    white_ratio = white_pixels / total_pixels
+
+    if white_ratio < 0.85:
+        return {"valid": False, "reason": "Background not pure white"}
+
+    return {
+        "valid": True,
+        "message": "Amazon compliant main image"
+    }
+
+@app.post("/process/validate")
+async def validate_image(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+    report = validate_amazon_image(img)
+    return report
+
 def force_pure_white_background(img: Image.Image) -> Image.Image:
     img = img.convert("RGBA")
 
@@ -310,6 +346,7 @@ async def process_batch(files: list[UploadFile] = File(...)):
             "Content-Disposition": "attachment; filename=amazon_images.zip"
         }
     )
+
 
 
 
