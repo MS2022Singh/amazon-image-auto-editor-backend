@@ -317,3 +317,29 @@ async def full_listing_pack(
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=full_listing_pack.zip"}
     )
+
+def generate_amazon_keywords(product_name: str):
+
+    prompt = f"""
+    Generate high-converting Amazon SEO keywords for: {product_name}
+
+    Return:
+    Primary Keywords:
+    Long-tail Keywords:
+    Backend Search Terms:
+    """
+
+    resp = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[{"role":"user","content":prompt}],
+        temperature=0.7
+    )
+
+    return resp.choices[0].message.content
+
+@app.post("/process/keyword-miner")
+async def keyword_miner(product_name: str = Form(...)):
+
+    keywords = generate_amazon_keywords(product_name)
+
+    return {"keywords": keywords}
