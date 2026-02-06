@@ -1,10 +1,9 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
 from datetime import datetime
-from fastapi import Request, HTTPException
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -18,24 +17,42 @@ app.add_middleware(
 
 REMOVEBG_API_KEY = os.getenv("REMOVEBG_API_KEY")
 
+# ---------- DAILY LIMIT SETTINGS ----------
+DAILY_LIMIT = 10
+usage_store = {}
+
 # ---------------- ROOT ----------------
 @app.get("/")
 def root():
     return {"status": "ok"}
+
+# ---------------- DAILY LIMIT FUNCTION ----------------
+def check_daily_limit(ip: str):
+
+    today = datetime.utcnow().date()
+
+    if ip not in usage_store:
+        usage_store[ip] = {"date": today, "count": 0}
+
+    if usage_store[ip]["date"] != today:
+        usage_store[ip] = {"date": today, "count": 0}
+
+    if usage_store[ip]["count"] >= DAILY_LIMIT:
+        raise HTTPException(status_code=429, detail="Daily free limit reached")
+
+    usage_store[ip]["count"] += 1
 
 # ---------------- REMOVE BG ----------------
 def remove_bg(image_bytes: bytes) -> bytes:
     r = requests.post(
         "https://api.remove.bg/v1.0/removebg",
         headers={"X-Api-Key": REMOVEBG_API_KEY},
-        DAILY_LIMIT = 10
-        usage_store = {}
         files={"image_file": image_bytes},
         data={"size": "auto"},
     )
     return r.content
 
-# ---------------- HELPERS ----------------
+# ---------------- IMAGE HELPERS ----------------
 def smart_crop_rgba(img):
     alpha = img.split()[-1]
     bbox = alpha.getbbox()
@@ -49,7 +66,7 @@ def studio_lighting_correction(img):
     img = img.filter(ImageFilter.SMOOTH)
     return img
 
-def amazon_ready_image(img_bytes: bytes, bg_color="white"):
+def amazon_ready_image(img_bytes: bytes):
 
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
     img = smart_crop_rgba(img)
@@ -71,24 +88,6 @@ def amazon_ready_image(img_bytes: bytes, bg_color="white"):
     out = io.BytesIO()
     background.save(out,"JPEG",quality=95)
     return out.getvalue()
-def check_daily_limit(ip: str):
-
-    today = datetime.utcnow().date()
-
-    if ip not in usage_store:
-        usage_store[ip] = {"date": today, "count": 0}
-
-    # reset next day
-    if usage_store[ip]["date"] != today:
-        usage_store[ip] = {"date": today, "count": 0}
-
-    if usage_store[ip]["count"] >= DAILY_LIMIT:
-        raise HTTPException(
-            status_code=429,
-            detail="Daily free limit reached"
-        )
-
-    usage_store[ip]["count"] += 1
 
 # ---------------- PROCESS ----------------
 @app.post("/process")
@@ -116,13 +115,6 @@ async def preview(file: UploadFile = File(...)):
 
     return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
 
-# ---------------- VALIDATE ----------------
-@app.post("/process/validate")
-async def validate(file: UploadFile = File(...)):
-    img = Image.open(io.BytesIO(await file.read()))
-    w,h = img.size
-    return {"square": w==h, "resolution_ok": w>=1600}
-
 # ---------------- BATCH ----------------
 @app.post("/process/batch")
 async def batch(files: list[UploadFile] = File(...)):
@@ -142,5 +134,3 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
-
-
