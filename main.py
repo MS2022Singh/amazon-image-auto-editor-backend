@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
 from PIL import Image
+from PIL import IMAGEEnhance
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -50,6 +51,21 @@ def smart_crop_rgba(img):
     bbox = alpha.getbbox()
     return img.crop(bbox) if bbox else img
 
+def enhance_image(img: Image.Image) -> Image.Image:
+    # Slight contrast boost
+    contrast = ImageEnhance.Contrast(img)
+    img = contrast.enhance(1.08)
+
+    # Slight sharpness boost
+    sharp = ImageEnhance.Sharpness(img)
+    img = sharp.enhance(1.15)
+
+    # Slight color enhancement
+    color = ImageEnhance.Color(img)
+    img = color.enhance(1.05)
+
+    return img
+
 # ---------------- SHADOW (OPTIONAL) ----------------
 def apply_shadow(img):
     shadow = img.copy().convert("RGBA")
@@ -76,12 +92,14 @@ def amazon_ready_image(img_bytes: bytes, bg_color="white", add_shadow=0):
     y = (CANVAS-img.height)//2
     background.paste(img,(x,y),img)
 
-    if add_shadow:
-        background = apply_shadow(background)
+   if add_shadow:
+    background = apply_shadow(background)
 
-    out = io.BytesIO()
-    background.convert("RGB").save(out,"JPEG",quality=95)
-    return out.getvalue()
+background = enhance_image(background)
+
+out = io.BytesIO()
+background.convert("RGB").save(out,"JPEG",quality=95)
+return out.getvalue()
 
 # ---------------- PROCESS ----------------
 @app.post("/process")
@@ -133,3 +151,4 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
+
