@@ -117,6 +117,35 @@ def luxury_studio_lighting(img_rgba):
 
     return bg
 
+def luxury_lifestyle_scene(img_rgba):
+
+    CANVAS = 2000
+
+    # soft marble luxury background
+    bg = Image.new("RGB",(CANVAS,CANVAS),(250,250,250))
+
+    # slight gradient
+    grad = Image.new("RGB",(CANVAS,CANVAS),(235,235,235))
+    mask = Image.linear_gradient("L").resize((CANVAS,CANVAS))
+    bg = Image.composite(grad,bg,mask)
+
+    # resize product
+    w,h = img_rgba.size
+    target = int(CANVAS*0.65)
+    scale = min(target/w, target/h)
+    img_rgba = img_rgba.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
+
+    x = (CANVAS-img_rgba.width)//2
+    y = int(CANVAS*0.25)
+
+    bg.paste(img_rgba,(x,y),img_rgba)
+
+    # premium lighting
+    bg = ImageEnhance.Brightness(bg).enhance(1.05)
+    bg = ImageEnhance.Contrast(bg).enhance(1.08)
+
+    return bg
+
 # ---------------- PROCESS ----------------
 @app.post("/process")
 async def process_image(request: Request, file: UploadFile = File(...)):
@@ -179,4 +208,22 @@ async def studio(file: UploadFile = File(...)):
         io.BytesIO(out.getvalue()),
         media_type="image/jpeg",
         headers={"Content-Disposition": f"attachment; filename=studio_{file.filename}"}
+    )
+
+@app.post("/process/lifestyle")
+async def lifestyle(file: UploadFile = File(...)):
+
+    image_bytes = await file.read()
+    transparent = remove_bg(image_bytes)
+
+    img = Image.open(io.BytesIO(transparent)).convert("RGBA")
+    final = luxury_lifestyle_scene(img)
+
+    out = io.BytesIO()
+    final.save(out,"JPEG",quality=95)
+
+    return StreamingResponse(
+        io.BytesIO(out.getvalue()),
+        media_type="image/jpeg",
+        headers={"Content-Disposition": f"attachment; filename=lifestyle_{file.filename}"}
     )
