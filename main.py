@@ -80,39 +80,42 @@ def smart_crop_rgba(img: Image.Image) -> Image.Image:
 
     return img
 
-def amazon_ready_image(
-    transparent_bytes: bytes,
-    canvas_size: int = 2000,
-    fill_ratio: float = 0.88,   # sweet spot for Amazon
-    bg_color: str = "white"
-) -> bytes:
+from PIL import Image
+import io
 
-    product = Image.open(io.BytesIO(transparent_bytes)).convert("RGBA")
+def amazon_ready_image(img_bytes: bytes, bg_color="white") -> bytes:
 
-    # STEP 1: smart crop (kills floating feel)
-    product = smart_crop_rgba(product)
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
 
-    # STEP 2: create pure background
-    bg_rgba = resolve_background(bg_color)
-    background = Image.new("RGBA", (canvas_size, canvas_size), bg_rgba (255, 255, 255, 255))
+    # ---------- REMOVE EXTRA EMPTY AREA ----------
+    bbox = img.getbbox()
+    img = img.crop(bbox)
 
-    # STEP 3: auto scale
-    pw, ph = product.size
-    max_dim = int(canvas_size * fill_ratio)
-    scale = min(max_dim / pw, max_dim / ph)
-    new_size = (int(pw * scale), int(ph * scale))
-    product = product.resize(new_size, Image.LANCZOS)
+    # ---------- TARGET CANVAS ----------
+    CANVAS = 2000
+    FILL_RATIO = 0.85
 
-    # STEP 4: center paste
-    x = (canvas_size - new_size[0]) // 2
-    y = (canvas_size - new_size[1]) // 2
-    bg.paste(product, (x, y), product)
+    target_size = int(CANVAS * FILL_RATIO)
 
-    final = bg.convert("RGB")
-    out = io.BytesIO()
-    final.save(out, format="JPEG", quality=95, subsampling=0)
-    out.seek(0)
-    return out.read()
+    # ---------- RESIZE ----------
+    w, h = img.size
+    scale = min(target_size / w, target_size / h)
+    img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
+    # ---------- BACKGROUND ----------
+    background = Image.new("RGB", (CANVAS, CANVAS), bg_color)
+
+    # ---------- CENTER ----------
+    x = (CANVAS - img.width) // 2
+    y = (CANVAS - img.height) // 2
+
+    background.paste(img, (x, y), img)
+
+    output = io.BytesIO()
+    background.save(output, format="JPEG", quality=95)
+
+    return output.getvalue()
+
 
 # -----------------------------
 # SHADOW FREE AMAZON COMPOSE
@@ -243,6 +246,7 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=amazon_images.zip"}
     )
+
 
 
 
