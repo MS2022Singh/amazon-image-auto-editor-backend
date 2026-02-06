@@ -137,6 +137,9 @@ def amazon_ready_image(img_bytes: bytes, bg_color="white", add_shadow=0):
 
     background = studio_lighting_correction(background.convert("RGB"))
 
+    category = detect_product_category(img_bytes)
+background = category_styling(background, category)
+
     out = io.BytesIO()
     background.save(out,"JPEG",quality=95)
     return out.getvalue()
@@ -347,3 +350,37 @@ async def full_seller_kit(
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=amazon_seller_kit.zip"}
     )
+
+def detect_product_category(image_bytes: bytes):
+
+    response = client.responses.create(
+        model="gpt-4.1-mini",
+        input=[{
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": "Identify product category: jewellery, shoes, electronics, clothing, furniture, beauty, other. Return only category word."},
+                {"type": "input_image", "image_base64": image_bytes}
+            ]
+        }]
+    )
+
+    category = response.output_text.strip().lower()
+    return category
+
+def category_styling(img: Image.Image, category: str):
+
+    if category == "jewellery":
+        img = ImageEnhance.Contrast(img).enhance(1.12)
+        img = ImageEnhance.Sharpness(img).enhance(1.20)
+
+    elif category == "electronics":
+        img = ImageEnhance.Color(img).enhance(1.05)
+        img = ImageEnhance.Contrast(img).enhance(1.08)
+
+    elif category == "clothing":
+        img = ImageEnhance.Brightness(img).enhance(1.06)
+
+    elif category == "shoes":
+        img = ImageEnhance.Contrast(img).enhance(1.10)
+
+    return img
