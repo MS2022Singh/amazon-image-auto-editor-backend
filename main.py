@@ -1,14 +1,8 @@
-
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
-try:
-    from openai import OpenAI
-    client = OpenAI()
-except:
-    client = None
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -38,17 +32,6 @@ def remove_bg(image_bytes: bytes) -> bytes:
     return r.content
 
 # ---------------- HELPERS ----------------
-def resolve_background(bg_color: str):
-    presets = {
-        "white": (255,255,255),
-        "offwhite": (245,245,245),
-        "lightgrey": (240,240,240),
-        "black": (0,0,0),
-    }
-    if bg_color.startswith("#"):
-        return tuple(int(bg_color[i:i+2],16) for i in (1,3,5))
-    return presets.get(bg_color,(255,255,255))
-
 def smart_crop_rgba(img):
     alpha = img.split()[-1]
     bbox = alpha.getbbox()
@@ -62,83 +45,24 @@ def studio_lighting_correction(img):
     img = img.filter(ImageFilter.SMOOTH)
     return img
 
-def amazon_smart_framing(img, canvas=2000, fill=0.90):
-    img = smart_crop_rgba(img)
-
-    w,h = img.size
-    target = int(canvas*fill)
-    scale = min(target/w, target/h)
-    img = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
-
-    bg = Image.new("RGBA",(canvas,canvas),(255,255,255,255))
-    x = (canvas-img.width)//2
-    y = (canvas-img.height)//2
-    bg.paste(img,(x,y),img)
-
-    return bg
-
-def auto_amazon_fix(image_bytes: bytes):
-
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
-
-    CANVAS = 2000
-    target = int(CANVAS * 0.90)
-
-    # crop transparent
-    alpha = img.split()[-1]
-    bbox = alpha.getbbox()
-    if bbox:
-        img = img.crop(bbox)
-
-    # resize
-    w, h = img.size
-    scale = min(target / w, target / h)
-    img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-
-    # white background
-    bg = Image.new("RGBA", (CANVAS, CANVAS), (255,255,255,255))
-    x = (CANVAS - img.width)//2
-    y = (CANVAS - img.height)//2
-    bg.paste(img,(x,y),img)
-
-    out = io.BytesIO()
-    bg.convert("RGB").save(out,"JPEG",quality=95)
-
-    return out.getvalue()
-
-@app.post("/process/auto-fix")
-async def auto_fix(file: UploadFile = File(...)):
-    image_bytes = await file.read()
-
-    transparent = remove_bg(image_bytes)
-    fixed = auto_amazon_fix(transparent)
-
-    return StreamingResponse(
-        io.BytesIO(fixed),
-        media_type="image/jpeg",
-        headers={"Content-Disposition": f"attachment; filename=fixed_{file.filename}"}
-    )
-
-# ---------------- AMAZON READY ----------------
-def amazon_ready_image(img_bytes: bytes, bg_color="white", add_shadow=0):
+def amazon_ready_image(img_bytes: bytes, bg_color="white"):
 
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
     img = smart_crop_rgba(img)
 
-    framed = amazon_smart_framing(img)
+    CANVAS = 2000
+    target = int(CANVAS * 0.90)
 
-    bg_rgb = resolve_background(bg_color)
-    background = Image.new("RGBA", framed.size, (*bg_rgb,255))
-    background.paste(framed,(0,0),framed)
+    w, h = img.size
+    scale = min(target / w, target / h)
+    img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
-    if add_shadow == 1:
-        shadow = framed.point(lambda p: p*0.3)
-        background.paste(shadow,(0,0),shadow)
+    background = Image.new("RGBA", (CANVAS, CANVAS), (255,255,255,255))
+    x = (CANVAS - img.width)//2
+    y = (CANVAS - img.height)//2
+    background.paste(img,(x,y),img)
 
     background = studio_lighting_correction(background.convert("RGB"))
-
-    category = detect_product_category(img_bytes)
-background = category_styling(background, category)
 
     out = io.BytesIO()
     background.save(out,"JPEG",quality=95)
@@ -146,19 +70,15 @@ background = category_styling(background, category)
 
 # ---------------- PROCESS ----------------
 @app.post("/process")
-async def process_image(
-    file: UploadFile = File(...),
-    bg_color: str = Form("white"),
-    add_shadow: int = Form(0)
-):
+async def process_image(file: UploadFile = File(...)):
     image_bytes = await file.read()
     transparent = remove_bg(image_bytes)
-    final = amazon_ready_image(transparent,bg_color,add_shadow)
+    final = amazon_ready_image(transparent)
 
     return StreamingResponse(
         io.BytesIO(final),
         media_type="image/jpeg",
-        headers={"Content-Disposition":f"attachment; filename=amazon_{file.filename}"}
+        headers={"Content-Disposition": f"attachment; filename=amazon_{file.filename}"}
     )
 
 # ---------------- PREVIEW ----------------
@@ -167,7 +87,8 @@ async def preview(file: UploadFile = File(...)):
     image_bytes = await file.read()
     transparent = remove_bg(image_bytes)
     final = amazon_ready_image(transparent)
-    return StreamingResponse(io.BytesIO(final),media_type="image/jpeg")
+
+    return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
 
 # ---------------- VALIDATE ----------------
 @app.post("/process/validate")
@@ -186,201 +107,12 @@ async def batch(files: list[UploadFile] = File(...)):
             img_bytes = await f.read()
             transparent = remove_bg(img_bytes)
             final = amazon_ready_image(transparent)
-            zipf.writestr(f"amazon_{f.filename}",final)
+            zipf.writestr(f"amazon_{f.filename}", final)
 
     zip_buffer.seek(0)
+
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
-
-@app.post("/process/auto-fix")
-async def auto_fix(file: UploadFile = File(...)):
-    image_bytes = await file.read()
-
-    transparent = remove_bg(image_bytes)
-    fixed = auto_amazon_fix(transparent)
-
-    return StreamingResponse(
-        io.BytesIO(fixed),
-        media_type="image/jpeg",
-        headers={"Content-Disposition": f"attachment; filename=fixed_{file.filename}"}
-    )
-
-@app.post("/process/studio-pack")
-async def studio_pack(file: UploadFile = File(...)):
-    image_bytes = await file.read()
-
-    transparent = remove_bg(image_bytes)
-    images = generate_studio_pack(transparent)
-
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer,"w") as zipf:
-        for name,data in images.items():
-            zipf.writestr(name,data)
-
-    zip_buffer.seek(0)
-
-    return StreamingResponse(
-        zip_buffer,
-        media_type="application/zip",
-        headers={"Content-Disposition":"attachment; filename=studio_pack.zip"}
-    )
-
-def generate_listing_text(product_name: str):
-
-    if client is None:
-        return "AI listing disabled (OpenAI not installed)"
-
-    prompt = f"""
-    Create Amazon listing for: {product_name}
-
-    Return:
-    Title:
-    Bullet Points (5):
-    Keywords:
-    """
-
-    resp = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[{"role":"user","content":prompt}],
-        temperature=0.7
-    )
-
-    return resp.choices[0].message.content
-
-@app.post("/process/listing-text")
-async def listing_text(product_name: str = Form(...)):
-    text = generate_listing_text(product_name)
-    return {"listing": text}
-
-def apply_brand_watermark(product_bytes: bytes, logo_bytes: bytes):
-
-    product = Image.open(io.BytesIO(product_bytes)).convert("RGBA")
-    logo = Image.open(io.BytesIO(logo_bytes)).convert("RGBA")
-
-    # resize logo (bottom small watermark)
-    lw, lh = logo.size
-    target_w = int(product.width * 0.18)
-    scale = target_w / lw
-    logo = logo.resize((int(lw*scale), int(lh*scale)), Image.LANCZOS)
-
-    # position bottom-right
-    x = product.width - logo.width - 40
-    y = product.height - logo.height - 40
-
-    product.paste(logo, (x, y), logo)
-
-    out = io.BytesIO()
-    product.convert("RGB").save(out, "JPEG", quality=95)
-    return out.getvalue()
-
-@app.post("/process/brand-pack")
-async def brand_pack(
-    file: UploadFile = File(...),
-    logo: UploadFile = File(...)
-):
-
-    image_bytes = await file.read()
-    logo_bytes = await logo.read()
-
-    transparent = remove_bg(image_bytes)
-
-    # main amazon image
-    main = amazon_ready_image(transparent)
-
-    # watermark version
-    branded = apply_brand_watermark(main, logo_bytes)
-
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w") as zipf:
-        zipf.writestr("amazon_main.jpg", main)
-        zipf.writestr("amazon_branded.jpg", branded)
-
-    zip_buffer.seek(0)
-
-    return StreamingResponse(
-        zip_buffer,
-        media_type="application/zip",
-        headers={"Content-Disposition":"attachment; filename=brand_pack.zip"}
-    )
-
-def create_full_seller_kit(product_bytes: bytes, logo_bytes: bytes, product_name: str):
-
-    transparent = remove_bg(product_bytes)
-
-    # images
-    main_image = amazon_ready_image(transparent)
-    branded = apply_brand_watermark(main_image, logo_bytes)
-    listing_images = generate_amazon_set(transparent)
-
-    # listing text
-    text = generate_listing_text(product_name)
-
-    zip_buffer = io.BytesIO()
-
-    with zipfile.ZipFile(zip_buffer, "w") as zipf:
-
-        zipf.writestr("01_main.jpg", main_image)
-        zipf.writestr("02_branded.jpg", branded)
-
-        for name, data in listing_images.items():
-            zipf.writestr(name, data)
-
-        zipf.writestr("listing_text.txt", text)
-
-    zip_buffer.seek(0)
-    return zip_buffer
-
-@app.post("/process/full-seller-kit")
-async def full_seller_kit(
-    file: UploadFile = File(...),
-    logo: UploadFile = File(...),
-    product_name: str = Form(...)
-):
-
-    product_bytes = await file.read()
-    logo_bytes = await logo.read()
-
-    zip_buffer = create_full_seller_kit(product_bytes, logo_bytes, product_name)
-
-    return StreamingResponse(
-        zip_buffer,
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=amazon_seller_kit.zip"}
-    )
-
-def detect_product_category(image_bytes: bytes):
-
-    response = client.responses.create(
-        model="gpt-4.1-mini",
-        input=[{
-            "role": "user",
-            "content": [
-                {"type": "input_text", "text": "Identify product category: jewellery, shoes, electronics, clothing, furniture, beauty, other. Return only category word."},
-                {"type": "input_image", "image_base64": image_bytes}
-            ]
-        }]
-    )
-
-    category = response.output_text.strip().lower()
-    return category
-
-def category_styling(img: Image.Image, category: str):
-
-    if category == "jewellery":
-        img = ImageEnhance.Contrast(img).enhance(1.12)
-        img = ImageEnhance.Sharpness(img).enhance(1.20)
-
-    elif category == "electronics":
-        img = ImageEnhance.Color(img).enhance(1.05)
-        img = ImageEnhance.Contrast(img).enhance(1.08)
-
-    elif category == "clothing":
-        img = ImageEnhance.Brightness(img).enhance(1.06)
-
-    elif category == "shoes":
-        img = ImageEnhance.Contrast(img).enhance(1.10)
-
-    return img
