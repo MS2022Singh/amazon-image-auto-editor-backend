@@ -146,6 +146,29 @@ def luxury_lifestyle_scene(img_rgba):
 
     return bg
 
+def apply_logo_watermark(product_bytes: bytes, logo_bytes: bytes):
+
+    base = Image.open(io.BytesIO(product_bytes)).convert("RGBA")
+    logo = Image.open(io.BytesIO(logo_bytes)).convert("RGBA")
+
+    # resize logo proportional
+    bw, bh = base.size
+    lw, lh = logo.size
+
+    target_w = int(bw * 0.18)
+    scale = target_w / lw
+    logo = logo.resize((int(lw*scale), int(lh*scale)), Image.LANCZOS)
+
+    # position bottom-right
+    x = bw - logo.width - 40
+    y = bh - logo.height - 40
+
+    base.paste(logo, (x, y), logo)
+
+    out = io.BytesIO()
+    base.convert("RGB").save(out, "JPEG", quality=95)
+    return out.getvalue()
+
 # ---------------- PROCESS ----------------
 @app.post("/process")
 async def process_image(request: Request, file: UploadFile = File(...)):
@@ -226,4 +249,21 @@ async def lifestyle(file: UploadFile = File(...)):
         io.BytesIO(out.getvalue()),
         media_type="image/jpeg",
         headers={"Content-Disposition": f"attachment; filename=lifestyle_{file.filename}"}
+    )
+
+@app.post("/process/add-logo")
+async def add_logo(
+    image: UploadFile = File(...),
+    logo: UploadFile = File(...)
+):
+
+    image_bytes = await image.read()
+    logo_bytes = await logo.read()
+
+    result = apply_logo_watermark(image_bytes, logo_bytes)
+
+    return StreamingResponse(
+        io.BytesIO(result),
+        media_type="image/jpeg",
+        headers={"Content-Disposition": "attachment; filename=branded.jpg"}
     )
