@@ -268,4 +268,3 @@ def studio_lighting_correction(img: Image.Image) -> Image.Image:
     img = img.filter(ImageFilter.SMOOTH)
 
     return img
-
