@@ -89,6 +89,34 @@ def amazon_ready_image(img_bytes: bytes):
     background.save(out,"JPEG",quality=95)
     return out.getvalue()
 
+def luxury_studio_lighting(img_rgba):
+
+    CANVAS = 2000
+
+    # white luxury gradient background
+    bg = Image.new("RGB",(CANVAS,CANVAS),(255,255,255))
+    glow = Image.new("RGB",(CANVAS,CANVAS),(245,245,245))
+    mask = Image.radial_gradient("L").resize((CANVAS,CANVAS))
+    bg = Image.composite(glow,bg,mask)
+
+    # resize product
+    w,h = img_rgba.size
+    target = int(CANVAS*0.85)
+    scale = min(target/w, target/h)
+    img_rgba = img_rgba.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
+
+    x = (CANVAS-img_rgba.width)//2
+    y = (CANVAS-img_rgba.height)//2
+
+    bg.paste(img_rgba,(x,y),img_rgba)
+
+    # lighting polish
+    bg = ImageEnhance.Brightness(bg).enhance(1.05)
+    bg = ImageEnhance.Contrast(bg).enhance(1.08)
+    bg = ImageEnhance.Sharpness(bg).enhance(1.15)
+
+    return bg
+
 # ---------------- PROCESS ----------------
 @app.post("/process")
 async def process_image(request: Request, file: UploadFile = File(...)):
@@ -133,4 +161,22 @@ async def batch(files: list[UploadFile] = File(...)):
         zip_buffer,
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
+    )
+
+@app.post("/process/studio")
+async def studio(file: UploadFile = File(...)):
+
+    image_bytes = await file.read()
+    transparent = remove_bg(image_bytes)
+
+    img = Image.open(io.BytesIO(transparent)).convert("RGBA")
+    final = luxury_studio_lighting(img)
+
+    out = io.BytesIO()
+    final.save(out,"JPEG",quality=95)
+
+    return StreamingResponse(
+        io.BytesIO(out.getvalue()),
+        media_type="image/jpeg",
+        headers={"Content-Disposition": f"attachment; filename=studio_{file.filename}"}
     )
