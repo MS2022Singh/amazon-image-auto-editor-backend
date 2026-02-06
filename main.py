@@ -73,20 +73,35 @@ def apply_shadow(img):
     return shadow
 
 # ---------------- SMART FRAMING ----------------
-def amazon_smart_framing(img, canvas=2000, fill=0.90):
-    img = smart_crop_rgba(img)
-    w,h = img.size
-    target = int(canvas * fill)
+def amazon_smart_framing(img: Image.Image, canvas=2000):
 
-    scale = min(target/w, target/h)
-    img = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
+    # transparent crop
+    alpha = img.split()[-1]
+    bbox = alpha.getbbox()
+    if bbox:
+        img = img.crop(bbox)
 
-    background = Image.new("RGBA", (canvas, canvas), (255,255,255,255))
-    x = (canvas-img.width)//2
-    y = (canvas-img.height)//2
-    background.paste(img,(x,y),img)
+    # Amazon ideal fill = 92%
+    FILL_RATIO = 0.92
+    target = int(canvas * FILL_RATIO)
+
+    w, h = img.size
+    scale = min(target / w, target / h)
+
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+
+    img = img.resize((new_w, new_h), Image.LANCZOS)
+
+    background = Image.new("RGBA", (canvas, canvas), (255, 255, 255, 255))
+
+    x = (canvas - new_w) // 2
+    y = (canvas - new_h) // 2
+
+    background.paste(img, (x, y), img)
 
     return background
+
 
 # ---------------- AMAZON READY ----------------
 def amazon_ready_image(img_bytes: bytes, bg_color="white", add_shadow=0):
@@ -101,6 +116,8 @@ def amazon_ready_image(img_bytes: bytes, bg_color="white", add_shadow=0):
 
     background = enhance_image(background)
     background = studio_lighting_correction(background)
+
+    framed = amazon_smart_framing(img)
 
     out = io.BytesIO()
     background.convert("RGB").save(out,"JPEG",quality=95)
@@ -156,3 +173,4 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
+
