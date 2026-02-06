@@ -3,6 +3,8 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
+from openai import OpenAI
+client = OpenAI()
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -218,3 +220,27 @@ async def studio_pack(file: UploadFile = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=studio_pack.zip"}
     )
+
+def generate_listing_text(product_name: str):
+
+    prompt = f"""
+    Create Amazon listing for: {product_name}
+
+    Return:
+    Title:
+    Bullet Points (5):
+    Keywords:
+    """
+
+    resp = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[{"role":"user","content":prompt}],
+        temperature=0.7
+    )
+
+    return resp.choices[0].message.content
+
+@app.post("/process/listing-text")
+async def listing_text(product_name: str = Form(...)):
+    text = generate_listing_text(product_name)
+    return {"listing": text}
