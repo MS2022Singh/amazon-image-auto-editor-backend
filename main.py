@@ -155,3 +155,4 @@ def generate_listing_text(product_name: str):
 async def listing_text(product_name: str = Form(...)):
     text = generate_listing_text(product_name)
     return {"listing": text}
+
