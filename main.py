@@ -100,6 +100,19 @@ def auto_amazon_fix(image_bytes: bytes):
 
     return out.getvalue()
 
+@app.post("/process/auto-fix")
+async def auto_fix(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+
+    transparent = remove_bg(image_bytes)
+    fixed = auto_amazon_fix(transparent)
+
+    return StreamingResponse(
+        io.BytesIO(fixed),
+        media_type="image/jpeg",
+        headers={"Content-Disposition": f"attachment; filename=fixed_{file.filename}"}
+    )
+
 # ---------------- AMAZON READY ----------------
 def amazon_ready_image(img_bytes: bytes, bg_color="white", add_shadow=0):
 
@@ -184,4 +197,24 @@ async def auto_fix(file: UploadFile = File(...)):
         io.BytesIO(fixed),
         media_type="image/jpeg",
         headers={"Content-Disposition": f"attachment; filename=fixed_{file.filename}"}
+    )
+
+@app.post("/process/studio-pack")
+async def studio_pack(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+
+    transparent = remove_bg(image_bytes)
+    images = generate_studio_pack(transparent)
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer,"w") as zipf:
+        for name,data in images.items():
+            zipf.writestr(name,data)
+
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition":"attachment; filename=studio_pack.zip"}
     )
