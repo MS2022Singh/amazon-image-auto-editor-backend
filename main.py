@@ -44,6 +44,13 @@ def resolve_background(bg_color: str):
         return tuple(int(bg_color[i:i+2], 16) for i in (1,3,5))
     return presets.get(bg_color, (255,255,255))
 
+def gradient_background(size=(2000,2000), start=(255,255,255), end=(230,230,230)):
+    base = Image.new("RGB", size, start)
+    top = Image.new("RGB", size, end)
+    mask = Image.linear_gradient("L").resize(size)
+    return Image.composite(top, base, mask)
+
+
 # ---------------- SMART CROP ----------------
 def smart_crop_rgba(img):
     alpha = img.split()[-1]
@@ -64,30 +71,58 @@ def apply_shadow(img):
     return shadow
 
 def generate_amazon_set(transparent_bytes: bytes):
+
     outputs = {}
 
-    # 1️⃣ MAIN IMAGE
-    main = amazon_ready_image(transparent_bytes)
-    outputs["01_main.jpg"] = main
-
-    # 2️⃣ ZOOM IMAGE (closer crop)
     img = Image.open(io.BytesIO(transparent_bytes)).convert("RGBA")
     img = smart_crop_rgba(img)
 
+    # MAIN
+    outputs["01_main.jpg"] = amazon_ready_image(transparent_bytes)
+
+    # ZOOM
     zoom = img.resize((1800,1800), Image.LANCZOS)
     canvas = Image.new("RGB",(2000,2000),(255,255,255))
     canvas.paste(zoom,(100,100),zoom)
-
     buf = io.BytesIO()
     canvas.save(buf,"JPEG",quality=95)
     outputs["02_zoom.jpg"] = buf.getvalue()
 
-    # 3️⃣ CLEAN PRODUCT (no margin)
+    # CUT
     buf2 = io.BytesIO()
     img.convert("RGB").save(buf2,"JPEG",quality=95)
     outputs["03_cut.jpg"] = buf2.getvalue()
 
+    # GRADIENT
+    grad = gradient_background()
+    grad.paste(img.resize((1500,1500),Image.LANCZOS),(250,250),img.resize((1500,1500),Image.LANCZOS))
+    gbuf = io.BytesIO()
+    grad.save(gbuf,"JPEG",quality=95)
+    outputs["04_gradient.jpg"] = gbuf.getvalue()
+
+    # SOFT LIFESTYLE
+    life = Image.new("RGB",(2000,2000),(245,245,245))
+    life.paste(img.resize((1500,1500),Image.LANCZOS),(250,250),img.resize((1500,1500),Image.LANCZOS))
+    lbuf = io.BytesIO()
+    life.save(lbuf,"JPEG",quality=95)
+    outputs["05_soft.jpg"] = lbuf.getvalue()
+
+    # DARK CONTRAST
+    dark = Image.new("RGB",(2000,2000),(40,40,40))
+    dark.paste(img.resize((1500,1500),Image.LANCZOS),(250,250),img.resize((1500,1500),Image.LANCZOS))
+    dbuf = io.BytesIO()
+    dark.save(dbuf,"JPEG",quality=95)
+    outputs["06_dark.jpg"] = dbuf.getvalue()
+
+    # BANNER SPACE
+    banner = Image.new("RGB",(2000,2000),(255,255,255))
+    banner.paste(img.resize((1200,1200),Image.LANCZOS),(400,400),img.resize((1200,1200),Image.LANCZOS))
+    bbuf = io.BytesIO()
+    banner.save(bbuf,"JPEG",quality=95)
+    outputs["07_banner.jpg"] = bbuf.getvalue()
+
     return outputs
+
 
 # ---------------- AMAZON READY ----------------
 def amazon_ready_image(img_bytes: bytes, bg_color="white", add_shadow=0):
@@ -189,3 +224,4 @@ async def amazon_set(file: UploadFile = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_listing_images.zip"}
     )
+
