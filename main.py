@@ -143,3 +143,4 @@ async def batch(files: list[UploadFile] = File(...)):
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
 
+
