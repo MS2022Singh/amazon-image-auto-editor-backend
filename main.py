@@ -252,3 +252,54 @@ async def listing_text(product_name: str = Form(...)):
     text = generate_listing_text(product_name)
     return {"listing": text}
 
+def apply_brand_watermark(product_bytes: bytes, logo_bytes: bytes):
+
+    product = Image.open(io.BytesIO(product_bytes)).convert("RGBA")
+    logo = Image.open(io.BytesIO(logo_bytes)).convert("RGBA")
+
+    # resize logo (bottom small watermark)
+    lw, lh = logo.size
+    target_w = int(product.width * 0.18)
+    scale = target_w / lw
+    logo = logo.resize((int(lw*scale), int(lh*scale)), Image.LANCZOS)
+
+    # position bottom-right
+    x = product.width - logo.width - 40
+    y = product.height - logo.height - 40
+
+    product.paste(logo, (x, y), logo)
+
+    out = io.BytesIO()
+    product.convert("RGB").save(out, "JPEG", quality=95)
+    return out.getvalue()
+
+@app.post("/process/brand-pack")
+async def brand_pack(
+    file: UploadFile = File(...),
+    logo: UploadFile = File(...)
+):
+
+    image_bytes = await file.read()
+    logo_bytes = await logo.read()
+
+    transparent = remove_bg(image_bytes)
+
+    # main amazon image
+    main = amazon_ready_image(transparent)
+
+    # watermark version
+    branded = apply_brand_watermark(main, logo_bytes)
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w") as zipf:
+        zipf.writestr("amazon_main.jpg", main)
+        zipf.writestr("amazon_branded.jpg", branded)
+
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition":"attachment; filename=brand_pack.zip"}
+    )
+
