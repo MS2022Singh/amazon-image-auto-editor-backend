@@ -79,6 +79,70 @@ def reduce_reflections(img: Image.Image) -> Image.Image:
 
     return img
 
+
+
+
+
+
+
+
+
+
+
+
+def generate_listing_pack(transparent_bytes: bytes):
+
+    img = Image.open(io.BytesIO(transparent_bytes)).convert("RGBA")
+    img = smart_crop_rgba(img)
+
+    outputs = {}
+
+    # 1 MAIN
+    outputs["01_main.jpg"] = amazon_ready_image(transparent_bytes)
+
+    # 2 ZOOM
+    zoom = img.resize((1800,1800), Image.LANCZOS)
+    canvas = Image.new("RGB",(2000,2000),(255,255,255))
+    canvas.paste(zoom,(100,100),zoom)
+    buf = io.BytesIO()
+    canvas.save(buf,"JPEG",quality=95)
+    outputs["02_zoom.jpg"] = buf.getvalue()
+
+    # 3 CUTOUT
+    buf2 = io.BytesIO()
+    img.convert("RGB").save(buf2,"JPEG",quality=95)
+    outputs["03_cut.jpg"] = buf2.getvalue()
+
+    # 4 GRADIENT
+    grad = Image.new("RGB",(2000,2000),(245,245,245))
+    grad.paste(img.resize((1500,1500),Image.LANCZOS),(250,250),img.resize((1500,1500),Image.LANCZOS))
+    gbuf = io.BytesIO()
+    grad.save(gbuf,"JPEG",quality=95)
+    outputs["04_gradient.jpg"] = gbuf.getvalue()
+
+    # 5 SOFT
+    soft = Image.new("RGB",(2000,2000),(250,250,250))
+    soft.paste(img.resize((1500,1500),Image.LANCZOS),(250,250),img.resize((1500,1500),Image.LANCZOS))
+    sbuf = io.BytesIO()
+    soft.save(sbuf,"JPEG",quality=95)
+    outputs["05_soft.jpg"] = sbuf.getvalue()
+
+    # 6 DARK
+    dark = Image.new("RGB",(2000,2000),(40,40,40))
+    dark.paste(img.resize((1500,1500),Image.LANCZOS),(250,250),img.resize((1500,1500),Image.LANCZOS))
+    dbuf = io.BytesIO()
+    dark.save(dbuf,"JPEG",quality=95)
+    outputs["06_dark.jpg"] = dbuf.getvalue()
+
+    # 7 BANNER
+    banner = Image.new("RGB",(2000,2000),(255,255,255))
+    banner.paste(img.resize((1200,1200),Image.LANCZOS),(400,400),img.resize((1200,1200),Image.LANCZOS))
+    bbuf = io.BytesIO()
+    banner.save(bbuf,"JPEG",quality=95)
+    outputs["07_banner.jpg"] = bbuf.getvalue()
+
+    return outputs
+
 # ---------------- SHADOW ----------------
 def apply_shadow(img):
     shadow = img.copy().convert("RGBA")
@@ -186,6 +250,26 @@ async def batch(files: list[UploadFile] = File(...)):
         zip_buffer,
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
+    )
+
+@app.post("/process/listing-pack")
+async def listing_pack(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+    transparent = remove_bg(image_bytes)
+
+    images = generate_listing_pack(transparent)
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer,"w") as zipf:
+        for name,data in images.items():
+            zipf.writestr(name,data)
+
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition":"attachment; filename=amazon_listing_pack.zip"}
     )
 
 
