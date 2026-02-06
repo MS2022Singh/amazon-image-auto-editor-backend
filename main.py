@@ -63,6 +63,32 @@ def apply_shadow(img):
     shadow = shadow.point(lambda p: p * 0.3)
     return shadow
 
+def generate_amazon_set(transparent_bytes: bytes):
+    outputs = {}
+
+    # 1️⃣ MAIN IMAGE
+    main = amazon_ready_image(transparent_bytes)
+    outputs["01_main.jpg"] = main
+
+    # 2️⃣ ZOOM IMAGE (closer crop)
+    img = Image.open(io.BytesIO(transparent_bytes)).convert("RGBA")
+    img = smart_crop_rgba(img)
+
+    zoom = img.resize((1800,1800), Image.LANCZOS)
+    canvas = Image.new("RGB",(2000,2000),(255,255,255))
+    canvas.paste(zoom,(100,100),zoom)
+
+    buf = io.BytesIO()
+    canvas.save(buf,"JPEG",quality=95)
+    outputs["02_zoom.jpg"] = buf.getvalue()
+
+    # 3️⃣ CLEAN PRODUCT (no margin)
+    buf2 = io.BytesIO()
+    img.convert("RGB").save(buf2,"JPEG",quality=95)
+    outputs["03_cut.jpg"] = buf2.getvalue()
+
+    return outputs
+
 # ---------------- AMAZON READY ----------------
 def amazon_ready_image(img_bytes: bytes, bg_color="white", add_shadow=0):
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
@@ -142,4 +168,24 @@ async def batch(files: list[UploadFile] = File(...)):
         zip_buffer,
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=amazon_images.zip"}
+    )
+
+@app.post("/process/amazon-set")
+async def amazon_set(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+    transparent = remove_bg(image_bytes)
+
+    images = generate_amazon_set(transparent)
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer,"w") as zipf:
+        for name,data in images.items():
+            zipf.writestr(name,data)
+
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition":"attachment; filename=amazon_listing_images.zip"}
     )
