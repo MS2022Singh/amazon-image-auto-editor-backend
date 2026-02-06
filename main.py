@@ -71,6 +71,35 @@ def amazon_smart_framing(img, canvas=2000, fill=0.90):
 
     return bg
 
+def auto_amazon_fix(image_bytes: bytes):
+
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+
+    CANVAS = 2000
+    target = int(CANVAS * 0.90)
+
+    # crop transparent
+    alpha = img.split()[-1]
+    bbox = alpha.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+
+    # resize
+    w, h = img.size
+    scale = min(target / w, target / h)
+    img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
+    # white background
+    bg = Image.new("RGBA", (CANVAS, CANVAS), (255,255,255,255))
+    x = (CANVAS - img.width)//2
+    y = (CANVAS - img.height)//2
+    bg.paste(img,(x,y),img)
+
+    out = io.BytesIO()
+    bg.convert("RGB").save(out,"JPEG",quality=95)
+
+    return out.getvalue()
+
 # ---------------- AMAZON READY ----------------
 def amazon_ready_image(img_bytes: bytes, bg_color="white", add_shadow=0):
 
@@ -142,4 +171,17 @@ async def batch(files: list[UploadFile] = File(...)):
         zip_buffer,
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
+    )
+
+@app.post("/process/auto-fix")
+async def auto_fix(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+
+    transparent = remove_bg(image_bytes)
+    fixed = auto_amazon_fix(transparent)
+
+    return StreamingResponse(
+        io.BytesIO(fixed),
+        media_type="image/jpeg",
+        headers={"Content-Disposition": f"attachment; filename=fixed_{file.filename}"}
     )
