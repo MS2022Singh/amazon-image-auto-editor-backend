@@ -142,7 +142,7 @@ def amazon_ready_image(img_bytes: bytes, bg_color="white", add_shadow=0):
 
     x = (CANVAS - img.width) // 2
     y = (CANVAS - img.height) // 2
-    background.paste(img, (x, y), img)
+    background = amazon_smart_framing(img)
 
     if add_shadow == 1:
         background = apply_shadow(background)
@@ -224,4 +224,23 @@ async def amazon_set(file: UploadFile = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_listing_images.zip"}
     )
+
+def amazon_smart_framing(img: Image.Image, canvas=2000, fill=0.90):
+
+    img = smart_crop_rgba(img)
+
+    w, h = img.size
+    target = int(canvas * fill)
+
+    scale = min(target / w, target / h)
+    img = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
+
+    background = Image.new("RGBA", (canvas, canvas), (255,255,255,255))
+
+    x = (canvas - img.width)//2
+    y = (canvas - img.height)//2
+
+    background.paste(img, (x,y), img)
+
+    return background.convert("RGB")
 
