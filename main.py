@@ -2,8 +2,17 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
 import requests, io, os, zipfile
 from PIL import Image
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Amazon Image Auto Editor")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 REMOVEBG_API_KEY = os.getenv("REMOVEBG_API_KEY")
 
@@ -234,6 +243,7 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=amazon_images.zip"}
     )
+
 
 
 
