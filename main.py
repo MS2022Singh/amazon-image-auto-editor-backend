@@ -4,9 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
 from datetime import datetime
-from openai import OpenAI
 
-client = OpenAI()
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -155,4 +153,5 @@ def generate_listing_text(product_name: str):
 async def listing_text(product_name: str = Form(...)):
     text = generate_listing_text(product_name)
     return {"listing": text}
+
 
