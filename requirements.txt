@@ -5,4 +5,4 @@ requests
 python-multipart
 rembg
 onnxruntime
-
+openai>=1.0.0
