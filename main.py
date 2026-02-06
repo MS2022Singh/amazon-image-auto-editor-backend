@@ -303,3 +303,47 @@ async def brand_pack(
         headers={"Content-Disposition":"attachment; filename=brand_pack.zip"}
     )
 
+def create_full_seller_kit(product_bytes: bytes, logo_bytes: bytes, product_name: str):
+
+    transparent = remove_bg(product_bytes)
+
+    # images
+    main_image = amazon_ready_image(transparent)
+    branded = apply_brand_watermark(main_image, logo_bytes)
+    listing_images = generate_amazon_set(transparent)
+
+    # listing text
+    text = generate_listing_text(product_name)
+
+    zip_buffer = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, "w") as zipf:
+
+        zipf.writestr("01_main.jpg", main_image)
+        zipf.writestr("02_branded.jpg", branded)
+
+        for name, data in listing_images.items():
+            zipf.writestr(name, data)
+
+        zipf.writestr("listing_text.txt", text)
+
+    zip_buffer.seek(0)
+    return zip_buffer
+
+@app.post("/process/full-seller-kit")
+async def full_seller_kit(
+    file: UploadFile = File(...),
+    logo: UploadFile = File(...),
+    product_name: str = Form(...)
+):
+
+    product_bytes = await file.read()
+    logo_bytes = await logo.read()
+
+    zip_buffer = create_full_seller_kit(product_bytes, logo_bytes, product_name)
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=amazon_seller_kit.zip"}
+    )
