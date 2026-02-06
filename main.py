@@ -4,8 +4,11 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
-from openai import OpenAI
-client = OpenAI()
+try:
+    from openai import OpenAI
+    client = OpenAI()
+except:
+    client = None
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -224,6 +227,9 @@ async def studio_pack(file: UploadFile = File(...)):
 
 def generate_listing_text(product_name: str):
 
+    if client is None:
+        return "AI listing disabled (OpenAI not installed)"
+
     prompt = f"""
     Create Amazon listing for: {product_name}
 
@@ -245,3 +251,4 @@ def generate_listing_text(product_name: str):
 async def listing_text(product_name: str = Form(...)):
     text = generate_listing_text(product_name)
     return {"listing": text}
+
