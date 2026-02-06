@@ -2,8 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
-from PIL import Image
-from PIL import IMAGEEnhance
+from PIL import Image, ImageEnhance
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -51,22 +50,14 @@ def smart_crop_rgba(img):
     bbox = alpha.getbbox()
     return img.crop(bbox) if bbox else img
 
+# ---------------- ENHANCEMENT ----------------
 def enhance_image(img: Image.Image) -> Image.Image:
-    # Slight contrast boost
-    contrast = ImageEnhance.Contrast(img)
-    img = contrast.enhance(1.08)
-
-    # Slight sharpness boost
-    sharp = ImageEnhance.Sharpness(img)
-    img = sharp.enhance(1.15)
-
-    # Slight color enhancement
-    color = ImageEnhance.Color(img)
-    img = color.enhance(1.05)
-
+    img = ImageEnhance.Contrast(img).enhance(1.08)
+    img = ImageEnhance.Sharpness(img).enhance(1.15)
+    img = ImageEnhance.Color(img).enhance(1.05)
     return img
 
-# ---------------- SHADOW (OPTIONAL) ----------------
+# ---------------- SHADOW ----------------
 def apply_shadow(img):
     shadow = img.copy().convert("RGBA")
     shadow = shadow.point(lambda p: p * 0.3)
@@ -81,25 +72,25 @@ def amazon_ready_image(img_bytes: bytes, bg_color="white", add_shadow=0):
     FILL_RATIO = 0.85
     target = int(CANVAS * FILL_RATIO)
 
-    w,h = img.size
-    scale = min(target/w, target/h)
+    w, h = img.size
+    scale = min(target / w, target / h)
     img = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
 
     bg_rgb = resolve_background(bg_color)
-    background = Image.new("RGBA", (CANVAS, CANVAS), (*bg_rgb,255))
+    background = Image.new("RGBA", (CANVAS, CANVAS), (*bg_rgb, 255))
 
-    x = (CANVAS-img.width)//2
-    y = (CANVAS-img.height)//2
-    background.paste(img,(x,y),img)
+    x = (CANVAS - img.width) // 2
+    y = (CANVAS - img.height) // 2
+    background.paste(img, (x, y), img)
 
-   if add_shadow:
-    background = apply_shadow(background)
+    if add_shadow == 1:
+        background = apply_shadow(background)
 
-background = enhance_image(background)
+    background = enhance_image(background)
 
-out = io.BytesIO()
-background.convert("RGB").save(out,"JPEG",quality=95)
-return out.getvalue()
+    out = io.BytesIO()
+    background.convert("RGB").save(out, "JPEG", quality=95)
+    return out.getvalue()
 
 # ---------------- PROCESS ----------------
 @app.post("/process")
@@ -131,24 +122,24 @@ async def preview(file: UploadFile = File(...)):
 @app.post("/process/validate")
 async def validate(file: UploadFile = File(...)):
     img = Image.open(io.BytesIO(await file.read()))
-    w,h = img.size
-    return {"square": w==h, "resolution_ok": w>=1600}
+    w, h = img.size
+    return {"square": w == h, "resolution_ok": w >= 1600}
 
 # ---------------- BATCH ----------------
 @app.post("/process/batch")
 async def batch(files: list[UploadFile] = File(...)):
     zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer,"w") as zipf:
+    with zipfile.ZipFile(zip_buffer, "w") as zipf:
         for f in files:
             img_bytes = await f.read()
             transparent = remove_bg(img_bytes)
             final = amazon_ready_image(transparent)
             zipf.writestr(f"amazon_{f.filename}", final)
+
     zip_buffer.seek(0)
 
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
-        headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
+        headers={"Content-Disposition": "attachment; filename=amazon_images.zip"}
     )
-
