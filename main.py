@@ -3,6 +3,8 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
+from datetime import datetime
+from fastapi import Request, HTTPException
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -26,6 +28,8 @@ def remove_bg(image_bytes: bytes) -> bytes:
     r = requests.post(
         "https://api.remove.bg/v1.0/removebg",
         headers={"X-Api-Key": REMOVEBG_API_KEY},
+        DAILY_LIMIT = 10
+        usage_store = {}
         files={"image_file": image_bytes},
         data={"size": "auto"},
     )
@@ -67,10 +71,32 @@ def amazon_ready_image(img_bytes: bytes, bg_color="white"):
     out = io.BytesIO()
     background.save(out,"JPEG",quality=95)
     return out.getvalue()
+def check_daily_limit(ip: str):
+
+    today = datetime.utcnow().date()
+
+    if ip not in usage_store:
+        usage_store[ip] = {"date": today, "count": 0}
+
+    # reset next day
+    if usage_store[ip]["date"] != today:
+        usage_store[ip] = {"date": today, "count": 0}
+
+    if usage_store[ip]["count"] >= DAILY_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail="Daily free limit reached"
+        )
+
+    usage_store[ip]["count"] += 1
 
 # ---------------- PROCESS ----------------
 @app.post("/process")
-async def process_image(file: UploadFile = File(...)):
+async def process_image(request: Request, file: UploadFile = File(...)):
+
+    ip = request.client.host
+    check_daily_limit(ip)
+
     image_bytes = await file.read()
     transparent = remove_bg(image_bytes)
     final = amazon_ready_image(transparent)
@@ -116,3 +142,4 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
+
