@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageFilter
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -150,7 +150,9 @@ def amazon_ready_image(img_bytes: bytes, bg_color="white", add_shadow=0):
     background = enhance_image(background)
 
     out = io.BytesIO()
-    background.convert("RGB").save(out, "JPEG", quality=95)
+    background = studio_lighting_correction(background)
+background.convert("RGB").save(out,"JPEG",quality=95)
+
     return out.getvalue()
 
 # ---------------- PROCESS ----------------
@@ -243,4 +245,27 @@ def amazon_smart_framing(img: Image.Image, canvas=2000, fill=0.90):
     background.paste(img, (x,y), img)
 
     return background.convert("RGB")
+
+def studio_lighting_correction(img: Image.Image) -> Image.Image:
+
+    # Mild brightness lift
+    brightness = ImageEnhance.Brightness(img)
+    img = brightness.enhance(1.04)
+
+    # Contrast adjustment
+    contrast = ImageEnhance.Contrast(img)
+    img = contrast.enhance(1.10)
+
+    # Slight color boost
+    color = ImageEnhance.Color(img)
+    img = color.enhance(1.05)
+
+    # Sharpen
+    sharp = ImageEnhance.Sharpness(img)
+    img = sharp.enhance(1.15)
+
+    # Very light micro-smooth
+    img = img.filter(ImageFilter.SMOOTH)
+
+    return img
 
