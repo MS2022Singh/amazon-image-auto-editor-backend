@@ -267,3 +267,53 @@ async def add_logo(
         media_type="image/jpeg",
         headers={"Content-Disposition": "attachment; filename=branded.jpg"}
     )
+
+def generate_listing_text(product_name: str):
+
+    prompt = f"""
+    Create an optimized Amazon listing for: {product_name}
+
+    Return strictly in format:
+
+    Title:
+    Bullet Points:
+    Keywords:
+    """
+
+    resp = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[{"role":"user","content":prompt}],
+        temperature=0.7
+    )
+
+    return resp.choices[0].message.content
+
+@app.post("/process/full-listing-pack")
+async def full_listing_pack(
+    product_name: str = Form(...),
+    files: list[UploadFile] = File(...)
+):
+
+    zip_buffer = io.BytesIO()
+
+    listing_text = generate_listing_text(product_name)
+
+    with zipfile.ZipFile(zip_buffer, "w") as zipf:
+
+        # text file
+        zipf.writestr("listing.txt", listing_text)
+
+        # images
+        for f in files:
+            img_bytes = await f.read()
+            transparent = remove_bg(img_bytes)
+            final = amazon_ready_image(transparent)
+            zipf.writestr(f"image_{f.filename}", final)
+
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition":"attachment; filename=full_listing_pack.zip"}
+    )
