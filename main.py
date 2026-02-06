@@ -66,6 +66,19 @@ def studio_lighting_correction(img):
     img = img.filter(ImageFilter.SMOOTH)
     return img
 
+def reduce_reflections(img: Image.Image) -> Image.Image:
+
+    # slight highlight compression
+    img = ImageEnhance.Contrast(img).enhance(0.96)
+
+    # micro smooth to reduce sharp light reflections
+    img = img.filter(ImageFilter.SMOOTH_MORE)
+
+    # restore clarity
+    img = ImageEnhance.Sharpness(img).enhance(1.08)
+
+    return img
+
 # ---------------- SHADOW ----------------
 def apply_shadow(img):
     shadow = img.copy().convert("RGBA")
@@ -115,7 +128,8 @@ def amazon_ready_image(img_bytes: bytes, bg_color="white", add_shadow=0):
         background = apply_shadow(background)
 
     background = enhance_image(background)
-    background = studio_lighting_correction(background)
+    background = studio_lighting_correction(background.convert("RGB"))
+    background = reduce_reflections(background)
 
     framed = amazon_smart_framing(img)
 
@@ -173,4 +187,5 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
+
 
