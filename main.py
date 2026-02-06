@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
 from datetime import datetime
+from fastapi import Request
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -27,20 +28,26 @@ def root():
     return {"status": "ok"}
 
 # ---------------- DAILY LIMIT FUNCTION ----------------
-def check_daily_limit(ip: str):
+def check_usage(ip):
 
     today = datetime.utcnow().date()
 
     if ip not in usage_store:
         usage_store[ip] = {"date": today, "count": 0}
 
-    if usage_store[ip]["date"] != today:
-        usage_store[ip] = {"date": today, "count": 0}
+    record = usage_store[ip]
 
-    if usage_store[ip]["count"] >= DAILY_LIMIT:
-        raise HTTPException(status_code=429, detail="Daily free limit reached")
+    # reset next day
+    if record["date"] != today:
+        record["date"] = today
+        record["count"] = 0
 
-    usage_store[ip]["count"] += 1
+    if record["count"] >= DAILY_LIMIT:
+        return False
+
+    record["count"] += 1
+    return True
+1
 
 # ---------------- REMOVE BG ----------------
 def remove_bg(image_bytes: bytes) -> bytes:
@@ -173,8 +180,10 @@ def apply_logo_watermark(product_bytes: bytes, logo_bytes: bytes):
 @app.post("/process")
 async def process_image(request: Request, file: UploadFile = File(...)):
 
-    ip = request.client.host
-    check_daily_limit(ip)
+    user_ip = request.client.host
+
+    if not check_usage(user_ip):
+        return {"error": "Daily free limit reached"}
 
     image_bytes = await file.read()
     transparent = remove_bg(image_bytes)
@@ -182,7 +191,7 @@ async def process_image(request: Request, file: UploadFile = File(...)):
 
     return StreamingResponse(
         io.BytesIO(final),
-        media_type="image/jpeg",
+        media_type="image/jpeg"),
         headers={"Content-Disposition": f"attachment; filename=amazon_{file.filename}"}
     )
 
@@ -343,3 +352,4 @@ async def keyword_miner(product_name: str = Form(...)):
     keywords = generate_amazon_keywords(product_name)
 
     return {"keywords": keywords}
+
