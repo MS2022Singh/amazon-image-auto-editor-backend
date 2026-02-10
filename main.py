@@ -24,14 +24,21 @@ def root():
 # -------- REMOVE BG (fallback free mode) ----------
 def remove_bg(image_bytes: bytes) -> bytes:
     if REMOVEBG_API_KEY:
-        r = requests.post(
-            "https://api.remove.bg/v1.0/removebg",
-            headers={"X-Api-Key": REMOVEBG_API_KEY},
-            files={"image_file": image_bytes},
-            data={"size": "auto"},
-        )
-        return r.content
-    return image_bytes   # free unlimited mode
+        try:
+            r = requests.post(
+                "https://api.remove.bg/v1.0/removebg",
+                headers={"X-Api-Key": REMOVEBG_API_KEY},
+                files={"image_file": image_bytes},
+                data={"size": "auto"},
+                timeout=15
+            )
+            if r.status_code == 200:
+                return r.content
+        except:
+            pass
+
+    # fallback free unlimited mode
+    return image_bytes
 
 
 # -------- AUTO SQUARE ----------
@@ -145,3 +152,4 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
+
