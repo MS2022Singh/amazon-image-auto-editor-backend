@@ -1,86 +1,48 @@
-from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-import io, zipfile
-from PIL import Image, ImageEnhance, ImageFilter
+const API = "https://amazon-image-auto-editor-backend-production.up.railway.app";
+const fileInput = document.getElementById("fileInput");
 
-app = FastAPI()
+fileInput.addEventListener("change", previewImage);
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+function getBg(){
+    return document.getElementById("bgSelect").value;
+}
 
-# ---------- SMART CROP ----------
-def smart_crop(img):
-    alpha = img.split()[-1]
-    bbox = alpha.getbbox()
-    return img.crop(bbox) if bbox else img
+async function previewImage(){
 
-# ---------- WHITE BALANCE ----------
-def auto_white_balance(img):
-    img = ImageEnhance.Color(img).enhance(1.07)
-    img = ImageEnhance.Contrast(img).enhance(1.08)
-    img = ImageEnhance.Brightness(img).enhance(1.04)
-    return img
+    const file = fileInput.files[0];
+    if(!file) return;
 
-# ---------- REFLECTION REDUCER ----------
-def remove_reflection(img):
-    return img.filter(ImageFilter.SMOOTH_MORE)
+    const form = new FormData();
+    form.append("file", file);
+    form.append("bg_color", getBg());
 
-# ---------- AMAZON FRAME ----------
-def amazon_frame(img, bg_color="white"):
-    CANVAS = 2000
-    img = smart_crop(img)
+    const res = await fetch(`${API}/process/preview`,{
+        method:"POST",
+        body:form
+    });
 
-    w,h = img.size
-    scale = min((CANVAS*0.9)/w, (CANVAS*0.9)/h)
-    img = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
+    const blob = await res.blob();
+    document.getElementById("previewImg").src = URL.createObjectURL(blob);
+}
 
-    bg_map = {
-        "white": (255,255,255),
-        "offwhite": (245,245,245),
-        "grey": (240,240,240)
-    }
+async function downloadImage(){
 
-    bg = Image.new("RGBA",(CANVAS,CANVAS),(*bg_map.get(bg_color,(255,255,255)),255))
-    x = (CANVAS-img.width)//2
-    y = (CANVAS-img.height)//2
-    bg.paste(img,(x,y),img)
+    const file = fileInput.files[0];
+    if(!file) return;
 
-    return bg.convert("RGB")
+    const form = new FormData();
+    form.append("file", file);
+    form.append("bg_color", getBg());
 
-# ---------- PROCESS ----------
-@app.post("/process")
-async def process_image(
-    file: UploadFile = File(...),
-    bg_color: str = Form("white")
-):
-    img = Image.open(io.BytesIO(await file.read())).convert("RGBA")
+    const res = await fetch(`${API}/process`,{
+        method:"POST",
+        body:form
+    });
 
-    img = remove_reflection(img)
-    img = auto_white_balance(img)
-    img = amazon_frame(img, bg_color)
+    const blob = await res.blob();
 
-    out = io.BytesIO()
-    img.save(out,"JPEG",quality=95)
-
-    return StreamingResponse(io.BytesIO(out.getvalue()), media_type="image/jpeg")
-
-# ---------- PREVIEW ----------
-@app.post("/process/preview")
-async def preview(
-    file: UploadFile = File(...),
-    bg_color: str = Form("white")
-):
-    img = Image.open(io.BytesIO(await file.read())).convert("RGBA")
-    img = remove_reflection(img)
-    img = auto_white_balance(img)
-    img = amazon_frame(img, bg_color)
-
-    out = io.BytesIO()
-    img.save(out,"JPEG",quality=90)
-
-    return StreamingResponse(io.BytesIO(out.getvalue()), media_type="image/jpeg")
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "amazon_image.jpg";
+    a.click();
+}
