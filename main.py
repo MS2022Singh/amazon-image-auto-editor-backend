@@ -18,6 +18,22 @@ app.add_middleware(
 def remove_reflection(img):
     return img.filter(ImageFilter.MedianFilter(size=3))
 
+# ---------------- SIMPLE BG CLEANER (FREE MODE) ----------------
+def simple_background_clean(img):
+
+    img = img.convert("RGB")
+    pixels = img.load()
+
+    for y in range(img.height):
+        for x in range(img.width):
+            r,g,b = pixels[x,y]
+
+            # near-white background detect
+            if r>210 and g>210 and b>210:
+                pixels[x,y] = (255,255,255)
+
+    return img
+
 # ---------------- AUTO WHITE BALANCE ----------------
 def auto_white_balance(img):
     img = ImageEnhance.Color(img).enhance(1.06)
@@ -61,12 +77,14 @@ def process_pipeline(image_bytes, bg_color="white", add_shadow=0):
 
     img = remove_reflection(img)
     img = auto_white_balance(img)
+    img = simple_background_clean(img)   # <<< ADD THIS
     final = amazon_frame(img,bg_color,add_shadow)
 
     buf = io.BytesIO()
     final.save(buf,"JPEG",quality=95)
 
     return buf.getvalue()
+
 
 # ---------------- ROOT ----------------
 @app.get("/")
@@ -123,3 +141,4 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
+
