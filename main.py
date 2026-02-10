@@ -82,6 +82,8 @@ def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
 
     img = reflection_reduce(img)
     img = auto_white_balance(img)
+    img = smart_crop_rgba(img)
+    img = auto_square(img)
 
     CANVAS = 2000
     target = int(CANVAS * 0.9)
@@ -107,6 +109,12 @@ def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
     background.save(out,"JPEG",quality=95)
     return out.getvalue()
 
+def auto_square(img):
+    w, h = img.size
+    side = max(w, h)
+    bg = Image.new("RGBA", (side, side), (255,255,255,255))
+    bg.paste(img, ((side-w)//2, (side-h)//2), img)
+    return bg
 
 # ---------- PROCESS ----------
 @app.post("/process")
@@ -163,3 +171,4 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
+
