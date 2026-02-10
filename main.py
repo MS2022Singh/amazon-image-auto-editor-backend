@@ -1,48 +1,78 @@
-const API = "https://amazon-image-auto-editor-backend-production.up.railway.app";
-const fileInput = document.getElementById("fileInput");
+from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image, ImageEnhance, ImageFilter
+import io
 
-fileInput.addEventListener("change", previewImage);
+app = FastAPI()
 
-function getBg(){
-    return document.getElementById("bgSelect").value;
-}
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-async function previewImage(){
+# ---------- IMAGE PROCESS ----------
+def process_image_pipeline(img, bg_color="white", add_shadow=0):
 
-    const file = fileInput.files[0];
-    if(!file) return;
+    img = ImageEnhance.Color(img).enhance(1.05)
+    img = ImageEnhance.Contrast(img).enhance(1.08)
+    img = ImageEnhance.Brightness(img).enhance(1.05)
 
-    const form = new FormData();
-    form.append("file", file);
-    form.append("bg_color", getBg());
+    CANVAS = 2000
+    w, h = img.size
+    scale = min((CANVAS*0.9)/w, (CANVAS*0.9)/h)
+    img = img.resize((int(w*scale), int(h*scale)))
 
-    const res = await fetch(`${API}/process/preview`,{
-        method:"POST",
-        body:form
-    });
+    colors = {
+        "white": (255,255,255),
+        "offwhite": (245,245,245),
+        "grey": (240,240,240),
+        "black": (0,0,0),
+    }
 
-    const blob = await res.blob();
-    document.getElementById("previewImg").src = URL.createObjectURL(blob);
-}
+    bg = Image.new("RGBA", (CANVAS,CANVAS), (*colors.get(bg_color,(255,255,255)),255))
 
-async function downloadImage(){
+    x = (CANVAS - img.width)//2
+    y = (CANVAS - img.height)//2
+    bg.paste(img,(x,y),img)
 
-    const file = fileInput.files[0];
-    if(!file) return;
+    if add_shadow == 1:
+        shadow = bg.filter(ImageFilter.GaussianBlur(8))
+        bg = Image.blend(shadow, bg, 0.85)
 
-    const form = new FormData();
-    form.append("file", file);
-    form.append("bg_color", getBg());
+    return bg.convert("RGB")
 
-    const res = await fetch(`${API}/process`,{
-        method:"POST",
-        body:form
-    });
+# ---------- PROCESS ----------
+@app.post("/process")
+async def process(
+    file: UploadFile = File(...),
+    bg_color: str = Form("white"),
+    add_shadow: int = Form(0)
+):
+    img = Image.open(io.BytesIO(await file.read())).convert("RGBA")
 
-    const blob = await res.blob();
+    final = process_image_pipeline(img, bg_color, add_shadow)
 
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "amazon_image.jpg";
-    a.click();
-}
+    buf = io.BytesIO()
+    final.save(buf, "JPEG", quality=95)
+
+    return StreamingResponse(io.BytesIO(buf.getvalue()), media_type="image/jpeg")
+
+# ---------- PREVIEW ----------
+@app.post("/process/preview")
+async def preview(
+    file: UploadFile = File(...),
+    bg_color: str = Form("white"),
+    add_shadow: int = Form(0)
+):
+    img = Image.open(io.BytesIO(await file.read())).convert("RGBA")
+
+    final = process_image_pipeline(img, bg_color, add_shadow)
+
+    buf = io.BytesIO()
+    final.save(buf, "JPEG", quality=90)
+
+    return StreamingResponse(io.BytesIO(buf.getvalue()), media_type="image/jpeg")
