@@ -24,6 +24,7 @@ def root():
 def remove_bg_safe(image_bytes):
 
     if not REMOVEBG_API_KEY:
+        print("REMOVEBG KEY NOT FOUND - fallback used")
         return image_bytes
 
     try:
@@ -34,12 +35,17 @@ def remove_bg_safe(image_bytes):
             data={"size": "auto"},
             timeout=20
         )
-        if r.status_code == 200:
-            return r.content
-    except:
-        pass
 
-    return image_bytes
+        if r.status_code == 200:
+            print("BG REMOVED SUCCESS")
+            return r.content
+        else:
+            print("REMOVEBG FAILED:", r.status_code)
+            return image_bytes
+
+    except Exception as e:
+        print("REMOVEBG ERROR:", e)
+        return image_bytes
 
 # -------- IMAGE PIPELINE --------
 def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
@@ -97,3 +103,4 @@ async def preview(
     final = process_pipeline(transparent, bg_color, add_shadow)
 
     return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
+
