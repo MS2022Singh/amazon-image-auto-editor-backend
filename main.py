@@ -85,8 +85,6 @@ def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
 
     w,h = img.size
     scale = min(target/w, target/h)
-
-    # HIGH QUALITY RESIZE
     img = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
 
     bg_rgb = resolve_background(bg_color)
@@ -100,7 +98,6 @@ def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
         shadow = background.point(lambda p: p*0.25)
         background = Image.blend(background, shadow, 0.15)
 
-    # HIGH PRECISION SHARPEN
     background = background.convert("RGB")
     background = ImageEnhance.Sharpness(background).enhance(1.25)
     background = enhance(background)
@@ -110,6 +107,7 @@ def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
 
     return out.getvalue()
 
+# ---------------- BYTE LIMIT ----------------
 def compress_to_limit(img_bytes, max_kb=9000):
     img = Image.open(io.BytesIO(img_bytes))
     q = 98
@@ -131,9 +129,9 @@ async def process_image(
     image_bytes = await file.read()
     transparent = remove_bg_safe(image_bytes)
     final = amazon_ready_image(transparent, bg_color, add_shadow)
-    return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
+    final = compress_to_limit(final)
 
-final = compress_to_limit(final)
+    return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
 
 # ---------------- PREVIEW ----------------
 @app.post("/process/preview")
@@ -145,6 +143,7 @@ async def preview(
     image_bytes = await file.read()
     transparent = remove_bg_safe(image_bytes)
     final = amazon_ready_image(transparent, bg_color, add_shadow)
+
     return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
 
 # ---------------- VALIDATE ----------------
@@ -158,16 +157,19 @@ async def validate(file: UploadFile = File(...)):
 @app.post("/process/batch")
 async def batch(files: list[UploadFile] = File(...)):
     zip_buffer = io.BytesIO()
+
     with zipfile.ZipFile(zip_buffer,"w") as zipf:
         for f in files:
             img_bytes = await f.read()
             transparent = remove_bg_safe(img_bytes)
             final = amazon_ready_image(transparent)
+            final = compress_to_limit(final)
             zipf.writestr(f"amazon_{f.filename}",final)
+
     zip_buffer.seek(0)
+
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
-
