@@ -92,7 +92,7 @@ def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
     background.paste(img,(x,y),img)
 
     if add_shadow == 1:
-        shadow = background.point(lambda p: p*0.25)
+        shadow = background.filter(ImageFilter.GaussianBlur(35))
         background = Image.blend(background, shadow, 0.15)
 
     background = background.convert("RGB")
@@ -157,6 +157,7 @@ async def batch(files: list[UploadFile] = File(...)):
             transparent = remove_bg_safe(img_bytes)
             final = amazon_ready_image(transparent)
             zipf.writestr(f"amazon_{f.filename}",final)
+
     zip_buffer.seek(0)
     return StreamingResponse(
         zip_buffer,
