@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
-from rembg import remove   # NEW INTERNAL REMOVER
+from rembg import remove
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -21,33 +21,28 @@ REMOVEBG_API_KEY = os.getenv("REMOVEBG_API_KEY")
 def root():
     return {"status":"ok"}
 
-# ---------------- REMOVE BG SAFE ----------------
+# ---------- BG REMOVE ENGINE ----------
 def remove_bg_safe(image_bytes: bytes) -> bytes:
-
-    # TRY INTERNAL UNLIMITED REMOVER
     try:
+        # INTERNAL FREE MODE
         return remove(image_bytes)
     except:
-        pass
+        try:
+            # REMOVE.BG FALLBACK
+            r = requests.post(
+                "https://api.remove.bg/v1.0/removebg",
+                headers={"X-Api-Key": REMOVEBG_API_KEY},
+                files={"image_file": image_bytes},
+                data={"size": "auto"},
+                timeout=20
+            )
+            if r.status_code == 200:
+                return r.content
+        except:
+            pass
+    return image_bytes
 
-    # FALLBACK remove.bg
-    if not REMOVEBG_API_KEY:
-        return image_bytes
-    try:
-        r = requests.post(
-            "https://api.remove.bg/v1.0/removebg",
-            headers={"X-Api-Key": REMOVEBG_API_KEY},
-            files={"image_file": image_bytes},
-            data={"size": "auto"},
-            timeout=20
-        )
-        if r.status_code == 200:
-            return r.content
-        return image_bytes
-    except Exception:
-        return image_bytes
-
-# ---------------- IMAGE HELPERS ----------------
+# ---------- IMAGE HELPERS ----------
 def smart_crop_rgba(img):
     if img.mode != "RGBA":
         return img
@@ -55,7 +50,7 @@ def smart_crop_rgba(img):
     bbox = alpha.getbbox()
     return img.crop(bbox) if bbox else img
 
-def remove_reflection(img):
+def reflection_remove(img):
     return img.filter(ImageFilter.SMOOTH_MORE)
 
 def auto_white_balance(img):
@@ -64,8 +59,8 @@ def auto_white_balance(img):
     return img
 
 def enhance(img):
-    img = ImageEnhance.Contrast(img).enhance(1.08)
-    img = ImageEnhance.Sharpness(img).enhance(1.25)
+    img = ImageEnhance.Contrast(img).enhance(1.10)
+    img = ImageEnhance.Sharpness(img).enhance(1.20)
     return img
 
 def resolve_background(bg_color):
@@ -79,13 +74,13 @@ def resolve_background(bg_color):
         return tuple(int(bg_color[i:i+2],16) for i in (1,3,5))
     return presets.get(bg_color,(255,255,255))
 
-# ---------------- FINAL PIPELINE ----------------
+# ---------- AMAZON READY PIPELINE ----------
 def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
 
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
 
     img = smart_crop_rgba(img)
-    img = remove_reflection(img)
+    img = reflection_remove(img)
     img = auto_white_balance(img)
 
     CANVAS = 2000
@@ -93,6 +88,7 @@ def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
 
     w,h = img.size
     scale = min(target/w, target/h)
+
     img = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
 
     bg_rgb = resolve_background(bg_color)
@@ -106,26 +102,24 @@ def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
         shadow = background.point(lambda p: p*0.25)
         background = Image.blend(background, shadow, 0.15)
 
-    background = background.convert("RGB")
-    background = enhance(background)
+    background = enhance(background.convert("RGB"))
 
     out = io.BytesIO()
     background.save(out,"JPEG",quality=98,optimize=True,subsampling=0)
+
     return out.getvalue()
 
-# ---------------- BYTE LIMIT ----------------
 def compress_to_limit(img_bytes, max_kb=9000):
     img = Image.open(io.BytesIO(img_bytes))
     q = 98
     while True:
         buf = io.BytesIO()
         img.save(buf,"JPEG",quality=q,optimize=True)
-        size_kb = len(buf.getvalue())/1024
-        if size_kb <= max_kb or q<=70:
+        if len(buf.getvalue())/1024 <= max_kb or q<=70:
             return buf.getvalue()
         q -= 2
 
-# ---------------- PROCESS ----------------
+# ---------- PROCESS ----------
 @app.post("/process")
 async def process_image(
     file: UploadFile = File(...),
@@ -136,10 +130,9 @@ async def process_image(
     transparent = remove_bg_safe(image_bytes)
     final = amazon_ready_image(transparent, bg_color, add_shadow)
     final = compress_to_limit(final)
-
     return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
 
-# ---------------- PREVIEW ----------------
+# ---------- PREVIEW ----------
 @app.post("/process/preview")
 async def preview(
     file: UploadFile = File(...),
@@ -149,31 +142,26 @@ async def preview(
     image_bytes = await file.read()
     transparent = remove_bg_safe(image_bytes)
     final = amazon_ready_image(transparent, bg_color, add_shadow)
-
     return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
 
-# ---------------- VALIDATE ----------------
+# ---------- VALIDATE ----------
 @app.post("/process/validate")
 async def validate(file: UploadFile = File(...)):
     img = Image.open(io.BytesIO(await file.read()))
     w,h = img.size
     return {"square": w==h, "resolution_ok": w>=1600}
 
-# ---------------- BATCH ----------------
+# ---------- BATCH ----------
 @app.post("/process/batch")
 async def batch(files: list[UploadFile] = File(...)):
     zip_buffer = io.BytesIO()
-
     with zipfile.ZipFile(zip_buffer,"w") as zipf:
         for f in files:
             img_bytes = await f.read()
             transparent = remove_bg_safe(img_bytes)
             final = amazon_ready_image(transparent)
-            final = compress_to_limit(final)
             zipf.writestr(f"amazon_{f.filename}",final)
-
     zip_buffer.seek(0)
-
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
