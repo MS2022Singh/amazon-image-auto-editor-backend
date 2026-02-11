@@ -85,6 +85,8 @@ def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
 
     w,h = img.size
     scale = min(target/w, target/h)
+
+    # HIGH QUALITY RESIZE
     img = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
 
     bg_rgb = resolve_background(bg_color)
@@ -98,11 +100,26 @@ def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
         shadow = background.point(lambda p: p*0.25)
         background = Image.blend(background, shadow, 0.15)
 
-    background = enhance(background.convert("RGB"))
+    # HIGH PRECISION SHARPEN
+    background = background.convert("RGB")
+    background = ImageEnhance.Sharpness(background).enhance(1.25)
+    background = enhance(background)
 
     out = io.BytesIO()
-    background.save(out,"JPEG",quality=95)
+    background.save(out,"JPEG",quality=98,optimize=True,subsampling=0)
+
     return out.getvalue()
+
+def compress_to_limit(img_bytes, max_kb=9000):
+    img = Image.open(io.BytesIO(img_bytes))
+    q = 98
+    while True:
+        buf = io.BytesIO()
+        img.save(buf,"JPEG",quality=q,optimize=True)
+        size_kb = len(buf.getvalue())/1024
+        if size_kb <= max_kb or q<=70:
+            return buf.getvalue()
+        q -= 2
 
 # ---------------- PROCESS ----------------
 @app.post("/process")
@@ -115,6 +132,8 @@ async def process_image(
     transparent = remove_bg_safe(image_bytes)
     final = amazon_ready_image(transparent, bg_color, add_shadow)
     return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
+
+final = compress_to_limit(final)
 
 # ---------------- PREVIEW ----------------
 @app.post("/process/preview")
@@ -151,3 +170,4 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
+
