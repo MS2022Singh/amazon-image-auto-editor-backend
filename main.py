@@ -24,19 +24,18 @@ def root():
 def remove_bg_safe(image_bytes: bytes) -> bytes:
     if not REMOVEBG_API_KEY:
         return image_bytes
-
     try:
         r = requests.post(
             "https://api.remove.bg/v1.0/removebg",
             headers={"X-Api-Key": REMOVEBG_API_KEY},
             files={"image_file": image_bytes},
             data={"size": "auto"},
-            timeout=25
+            timeout=20
         )
         if r.status_code == 200:
             return r.content
         return image_bytes
-    except:
+    except Exception:
         return image_bytes
 
 # ---------------- IMAGE HELPERS ----------------
@@ -173,3 +172,4 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
+
