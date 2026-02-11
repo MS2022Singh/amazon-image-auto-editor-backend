@@ -3,7 +3,13 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
-from rembg import remove
+
+# SAFE OPTIONAL IMPORT
+try:
+    from rembg import remove
+    REMBG_AVAILABLE = True
+except:
+    REMBG_AVAILABLE = False
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -19,16 +25,21 @@ REMOVEBG_API_KEY = os.getenv("REMOVEBG_API_KEY")
 
 @app.get("/")
 def root():
-    return {"status":"ok"}
+    return {"status": "ok"}
 
-# ---------- BG REMOVE ENGINE ----------
+# ---------- BG REMOVE SAFE ----------
 def remove_bg_safe(image_bytes: bytes) -> bytes:
-    try:
-        # INTERNAL FREE MODE
-        return remove(image_bytes)
-    except:
+
+    # INTERNAL FREE MODE
+    if REMBG_AVAILABLE:
         try:
-            # REMOVE.BG FALLBACK
+            return remove(image_bytes)
+        except:
+            pass
+
+    # REMOVE.BG FALLBACK
+    if REMOVEBG_API_KEY:
+        try:
             r = requests.post(
                 "https://api.remove.bg/v1.0/removebg",
                 headers={"X-Api-Key": REMOVEBG_API_KEY},
@@ -40,9 +51,10 @@ def remove_bg_safe(image_bytes: bytes) -> bytes:
                 return r.content
         except:
             pass
+
     return image_bytes
 
-# ---------- IMAGE HELPERS ----------
+# ---------- HELPERS ----------
 def smart_crop_rgba(img):
     if img.mode != "RGBA":
         return img
@@ -74,11 +86,10 @@ def resolve_background(bg_color):
         return tuple(int(bg_color[i:i+2],16) for i in (1,3,5))
     return presets.get(bg_color,(255,255,255))
 
-# ---------- AMAZON READY PIPELINE ----------
+# ---------- PIPELINE ----------
 def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
 
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-
     img = smart_crop_rgba(img)
     img = reflection_remove(img)
     img = auto_white_balance(img)
@@ -88,7 +99,6 @@ def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
 
     w,h = img.size
     scale = min(target/w, target/h)
-
     img = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
 
     bg_rgb = resolve_background(bg_color)
@@ -106,7 +116,6 @@ def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
 
     out = io.BytesIO()
     background.save(out,"JPEG",quality=98,optimize=True,subsampling=0)
-
     return out.getvalue()
 
 def compress_to_limit(img_bytes, max_kb=9000):
