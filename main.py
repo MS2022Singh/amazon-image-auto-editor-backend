@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
+from rembg import remove   # NEW INTERNAL REMOVER
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -22,6 +23,14 @@ def root():
 
 # ---------------- REMOVE BG SAFE ----------------
 def remove_bg_safe(image_bytes: bytes) -> bytes:
+
+    # TRY INTERNAL UNLIMITED REMOVER
+    try:
+        return remove(image_bytes)
+    except:
+        pass
+
+    # FALLBACK remove.bg
     if not REMOVEBG_API_KEY:
         return image_bytes
     try:
@@ -56,7 +65,7 @@ def auto_white_balance(img):
 
 def enhance(img):
     img = ImageEnhance.Contrast(img).enhance(1.08)
-    img = ImageEnhance.Sharpness(img).enhance(1.12)
+    img = ImageEnhance.Sharpness(img).enhance(1.25)
     return img
 
 def resolve_background(bg_color):
@@ -98,12 +107,10 @@ def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
         background = Image.blend(background, shadow, 0.15)
 
     background = background.convert("RGB")
-    background = ImageEnhance.Sharpness(background).enhance(1.25)
     background = enhance(background)
 
     out = io.BytesIO()
     background.save(out,"JPEG",quality=98,optimize=True,subsampling=0)
-
     return out.getvalue()
 
 # ---------------- BYTE LIMIT ----------------
