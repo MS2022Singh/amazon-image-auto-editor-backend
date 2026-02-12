@@ -16,9 +16,9 @@ app.add_middleware(
 
 REMOVEBG_API_KEY = os.getenv("REMOVEBG_API_KEY")
 
-@app.get("/")
-def root():
-    return {"status":"server running"}
+@app.get("/envtest")
+def envtest():
+    return {"removebg": bool(REMOVEBG_API_KEY)}
 
 # ---------------- REMOVE BG SAFE ----------------
 def internal_white_bg(img_bytes):
@@ -179,3 +179,4 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
+
