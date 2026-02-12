@@ -39,20 +39,21 @@ def remove_bg_safe(image_bytes: bytes) -> bytes:
             r = requests.post(
                 "https://api.remove.bg/v1.0/removebg",
                 headers={"X-Api-Key": REMOVEBG_API_KEY},
-                files={"image_file": image_bytes},
+                files={"image_file": ("image.png", image_bytes)},
                 data={"size": "auto"},
-                timeout=25
+                timeout=30
             )
+
             if r.status_code == 200:
                 return r.content
-        except:
-            pass
+            else:
+                print("RemoveBG failed:", r.text)
 
-    # fallback internal white background
-    img = internal_white_bg(image_bytes)
-    out = io.BytesIO()
-    img.save(out,"PNG")
-    return out.getvalue()
+        except Exception as e:
+            print("RemoveBG error:", e)
+
+    # fallback
+    return image_bytes
 
 # ---------------- IMAGE HELPERS ----------------
 def smart_crop_rgba(img):
@@ -179,4 +180,5 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
+
 
