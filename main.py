@@ -24,12 +24,17 @@ def envtest():
 def internal_white_bg(img_bytes):
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
     gray = img.convert("L")
-    mask = gray.point(lambda x: 255 if x < 240 else 0)
+
+    # correct mask
+    mask = gray.point(lambda x: 0 if x > 240 else 255)
+
     bg = Image.new("RGBA", img.size, (255,255,255,255))
     bg.paste(img, mask=mask)
+
     out = io.BytesIO()
     bg.save(out, "PNG")
     return out.getvalue()
+
 
 def remove_bg_safe(image_bytes):
 
@@ -183,3 +188,4 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
+
