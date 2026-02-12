@@ -23,41 +23,37 @@ def envtest():
 # ---------------- REMOVE BG SAFE ----------------
 def internal_white_bg(img_bytes):
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-
-    # simple subject mask (bright background assumption)
     gray = img.convert("L")
     mask = gray.point(lambda x: 255 if x < 240 else 0)
-
     bg = Image.new("RGBA", img.size, (255,255,255,255))
     bg.paste(img, mask=mask)
-    return bg
+    out = io.BytesIO()
+    bg.save(out, "PNG")
+    return out.getvalue()
 
 def remove_bg_safe(image_bytes):
 
     if not REMOVEBG_API_KEY:
-        return image_bytes
+        return internal_white_bg(image_bytes)
 
     try:
         r = requests.post(
             "https://api.remove.bg/v1.0/removebg",
             headers={"X-Api-Key": REMOVEBG_API_KEY},
-            files={
-                "image_file": ("image.png", image_bytes)
-            },
+            files={"image_file": ("image.png", image_bytes)},
             data={"size": "auto"},
             timeout=30
         )
 
         if r.status_code == requests.codes.ok:
-            print("REMOVE.BG SUCCESS")
             return r.content
         else:
             print("REMOVE.BG FAILED:", r.text)
-            return image_bytes
+            return internal_white_bg(image_bytes)
 
     except Exception as e:
         print("REMOVE.BG ERROR:", e)
-        return image_bytes
+        return internal_white_bg(image_bytes)
 
 # ---------------- IMAGE HELPERS ----------------
 def smart_crop_rgba(img):
@@ -101,6 +97,9 @@ def amazon_ready_image(img_bytes, bg_color="white", add_shadow=0):
     target = int(CANVAS * 0.9)
 
     w,h = img.size
+    if w == 0 or h == 0:
+        return img_bytes
+
     scale = min(target/w, target/h)
     img = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
 
@@ -184,6 +183,3 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
-
-
-
