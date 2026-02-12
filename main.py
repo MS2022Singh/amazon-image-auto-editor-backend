@@ -145,8 +145,7 @@ async def process_image(
     add_shadow: int = Form(0)
 ):
     image_bytes = await file.read()
-    transparent = remove_bg_safe(image_bytes)
-    final = amazon_ready_image(transparent, bg_color, add_shadow)
+   final = process_pipeline(image_bytes, bg_color, add_shadow)
     final = compress_to_limit(final)
 
     return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
@@ -193,5 +192,6 @@ async def removebg_test(file: UploadFile = File(...)):
     img_bytes = await file.read()
     out = remove_bg_safe(img_bytes)
     return StreamingResponse(io.BytesIO(out), media_type="image/png")
+
 
 
