@@ -195,4 +195,3 @@ async def removebg_test(file: UploadFile = File(...)):
     out = remove_bg_safe(img_bytes)
     return StreamingResponse(io.BytesIO(out), media_type="image/png")
 
-
