@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -21,23 +21,38 @@ def root():
     return {"status":"server running"}
 
 # ---------------- REMOVE BG SAFE ----------------
-def remove_bg_safe(image_bytes: bytes) -> bytes:
-    if not REMOVEBG_API_KEY:
-        return image_bytes
+def internal_white_bg(img_bytes):
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
 
-    try:
-        r = requests.post(
-            "https://api.remove.bg/v1.0/removebg",
-            headers={"X-Api-Key": REMOVEBG_API_KEY},
-            files={"image_file": image_bytes},
-            data={"size": "auto"},
-            timeout=25
-        )
-        if r.status_code == 200:
-            return r.content
-        return image_bytes
-    except:
-        return image_bytes
+    # simple subject mask (bright background assumption)
+    gray = img.convert("L")
+    mask = gray.point(lambda x: 255 if x < 240 else 0)
+
+    bg = Image.new("RGBA", img.size, (255,255,255,255))
+    bg.paste(img, mask=mask)
+    return bg
+
+def remove_bg_safe(image_bytes: bytes) -> bytes:
+
+    if REMOVEBG_API_KEY:
+        try:
+            r = requests.post(
+                "https://api.remove.bg/v1.0/removebg",
+                headers={"X-Api-Key": REMOVEBG_API_KEY},
+                files={"image_file": image_bytes},
+                data={"size": "auto"},
+                timeout=25
+            )
+            if r.status_code == 200:
+                return r.content
+        except:
+            pass
+
+    # fallback internal white background
+    img = internal_white_bg(image_bytes)
+    out = io.BytesIO()
+    img.save(out,"PNG")
+    return out.getvalue()
 
 # ---------------- IMAGE HELPERS ----------------
 def smart_crop_rgba(img):
