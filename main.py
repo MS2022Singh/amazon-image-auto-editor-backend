@@ -3,8 +3,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
-from rembg import remove, new_session
-session = None   # lightweight model
+from rembg import remove
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -43,24 +42,19 @@ def internal_white_bg(img_bytes):
 # ---------------- REMOVE BG SAFE (FINAL STABLE) ----------------
 def remove_bg_safe(image_bytes):
     try:
-        # Local AI segmentation (FREE unlimited)
-        global session
+        # Local segmentation (lazy load)
+        output = remove(image_bytes)
 
-        if session is None:
-           session = new_session("u2netp")
+        if not output or len(output) < 1000:
+            print("rembg returned empty, using white bg fallback")
+            return internal_white_bg(image_bytes)
 
-output = remove(image_bytes, session=session)
+        return output
 
-# Safety check
-if not output or len(output) < 1000:
-    print("rembg returned empty, using white bg fallback")
-    return internal_white_bg(image_bytes)
+    except Exception as e:
+        print("rembg local error:", e)
+        return internal_white_bg(image_bytes)
 
-return output
-
-except Exception as e:
-    print("rembg local error:", e)
-    return internal_white_bg(image_bytes)
 
 # ---------------- IMAGE HELPERS ----------------
 def smart_crop_rgba(img):
@@ -175,4 +169,5 @@ async def removebg_test(file: UploadFile = File(...)):
     img_bytes = await file.read()
     out = remove_bg_safe(img_bytes)
     return StreamingResponse(io.BytesIO(out), media_type="image/png")
+
 
