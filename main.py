@@ -21,16 +21,15 @@ REMOVEBG_API_KEY = os.getenv("REMOVEBG_API_KEY", "").strip()
 def envtest():
     return {"removebg_key_present": bool(REMOVEBG_API_KEY)}
 
-# ---------------- REMOVE BG SAFE ----------------
+# ---------------- INTERNAL WHITE BG ----------------
 def internal_white_bg(img_bytes):
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
 
-    # detect light background
     datas = img.getdata()
     newData = []
     for item in datas:
         if item[0] > 220 and item[1] > 220 and item[2] > 220:
-            newData.append((255, 255, 255, 0))
+            newData.append((255,255,255,0))
         else:
             newData.append(item)
 
@@ -43,7 +42,9 @@ def internal_white_bg(img_bytes):
     bg.save(out, "PNG")
     return out.getvalue()
 
+# ---------------- REMOVE BG SAFE ----------------
 def remove_bg_safe(image_bytes):
+
     if not REMOVEBG_API_KEY:
         return internal_white_bg(image_bytes)
 
@@ -58,7 +59,7 @@ def remove_bg_safe(image_bytes):
 
         print("remove.bg status:", r.status_code)
 
-        if r.status_code == requests.codes.ok:
+        if r.status_code == 200:
             return r.content
         else:
             return internal_white_bg(image_bytes)
@@ -84,6 +85,10 @@ def auto_white_balance(img):
     img = ImageEnhance.Brightness(img).enhance(1.03)
     return img
 
+def remove_reflection(img):
+    # mild smoothing to reduce reflections
+    return img.filter(ImageFilter.SMOOTH_MORE)
+
 def resolve_background(bg_color):
     presets = {
         "white": (255,255,255),
@@ -106,18 +111,15 @@ def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
         target = int(CANVAS * 0.9)
 
         w, h = img.size
-        if w == 0 or h == 0:
-            raise ValueError("Invalid image size")
-
         scale = min(target / w, target / h)
         img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
         bg_rgb = resolve_background(bg_color)
-        background = Image.new("RGBA", (CANVAS, CANVAS), (*bg_rgb, 255))
+        background = Image.new("RGBA", (CANVAS, CANVAS), (*bg_rgb,255))
 
-        x = (CANVAS - img.width) // 2
-        y = (CANVAS - img.height) // 2
-        background.paste(img, (x, y), img)
+        x = (CANVAS - img.width)//2
+        y = (CANVAS - img.height)//2
+        background.paste(img,(x,y),img)
 
         if add_shadow == 1:
             shadow = background.filter(ImageFilter.GaussianBlur(35))
@@ -126,12 +128,12 @@ def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
         background = enhance(background.convert("RGB"))
 
         out = io.BytesIO()
-        background.save(out, "JPEG", quality=95, optimize=True)
+        background.save(out,"JPEG",quality=95,optimize=True)
         return out.getvalue()
 
     except Exception as e:
         print("PIPELINE ERROR:", e)
-        return img_bytes  # fallback
+        return img_bytes
 
 # ---------------- SIZE LIMIT ----------------
 def compress_to_limit(img_bytes, max_kb=9000):
@@ -197,8 +199,3 @@ async def removebg_test(file: UploadFile = File(...)):
     img_bytes = await file.read()
     out = remove_bg_safe(img_bytes)
     return StreamingResponse(io.BytesIO(out), media_type="image/png")
-
-
-
-
-
