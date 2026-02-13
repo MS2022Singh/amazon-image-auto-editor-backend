@@ -7,6 +7,11 @@ from rembg import remove
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
+# -------- ROOT (Railway health check fix) --------
+@app.get("/")
+def root():
+    return {"status": "Amazon Image Auto Editor running"}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,6 +33,7 @@ def internal_white_bg(img_bytes):
     gray = img.convert("L")
     mask = gray.point(lambda x: 0 if x > 235 else 255)
     white_bg.paste(img, (0, 0), mask)
+
     out = io.BytesIO()
     white_bg.convert("RGB").save(out, "JPEG", quality=95)
     return out.getvalue()
@@ -88,6 +94,7 @@ def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
 
     img = smart_crop_rgba(img)
 
+    # crash protection
     if img.width == 0 or img.height == 0:
         return internal_white_bg(img_bytes)
 
