@@ -79,31 +79,40 @@ def resolve_background(bg_color):
     return presets.get(bg_color,(255,255,255))
 
 # ---------------- CORE PIPELINE ----------------
+# ---------------- CORE PIPELINE ----------------
 def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
 
     transparent = remove_bg_safe(img_bytes)
     img = Image.open(io.BytesIO(transparent)).convert("RGBA")
 
     img = smart_crop_rgba(img)
+    img = remove_reflection(img)
     img = auto_white_balance(img)
 
     CANVAS = 2000
-    target = int(CANVAS * 0.9)
+    TARGET_FILL = 0.92   # auto zoom fill (Amazon recommended 85–95%)
 
-    w,h = img.size
-    scale = min(target/w, target/h)
+    # --- AUTO ZOOM ---
+    w, h = img.size
+    scale = min((CANVAS * TARGET_FILL)/w, (CANVAS * TARGET_FILL)/h)
     img = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
 
-    bg_rgb = resolve_background(bg_color)
+    # --- PURE WHITE LOCK ---
+    if bg_color == "white":
+        bg_rgb = (255,255,255)
+    else:
+        bg_rgb = resolve_background(bg_color)
+
     background = Image.new("RGBA",(CANVAS,CANVAS),(*bg_rgb,255))
 
     x = (CANVAS-img.width)//2
     y = (CANVAS-img.height)//2
     background.paste(img,(x,y),img)
 
+    # --- SOFT STUDIO SHADOW ---
     if add_shadow == 1:
-        shadow = background.filter(ImageFilter.GaussianBlur(35))
-        background = Image.blend(background, shadow, 0.15)
+        shadow = background.filter(ImageFilter.GaussianBlur(40))
+        background = Image.blend(background, shadow, 0.12)
 
     background = enhance(background.convert("RGB"))
 
@@ -175,3 +184,4 @@ async def removebg_test(file: UploadFile = File(...)):
     img_bytes = await file.read()
     out = remove_bg_safe(img_bytes)
     return StreamingResponse(io.BytesIO(out), media_type="image/png")
+
