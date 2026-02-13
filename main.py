@@ -105,8 +105,14 @@ def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
     target = int(CANVAS * 0.9)
 
     w, h = img.size
-    scale = min(target / w, target / h)
-    img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
+# safety fix (prevents 502 crash)
+if w == 0 or h == 0:
+    return internal_white_bg(img_bytes)
+
+scale = min(target / w, target / h)
+img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
 
     bg_rgb = resolve_background(bg_color)
     background = Image.new("RGBA", (CANVAS, CANVAS), (*bg_rgb,255))
@@ -176,4 +182,5 @@ async def removebg_test(file: UploadFile = File(...)):
     img_bytes = await file.read()
     out = remove_bg_safe(img_bytes)
     return StreamingResponse(io.BytesIO(out), media_type="image/png")
+
 
