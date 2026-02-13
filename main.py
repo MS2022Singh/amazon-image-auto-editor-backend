@@ -43,30 +43,12 @@ def internal_white_bg(img_bytes):
 
 # ---------------- REMOVE BG SAFE ----------------
 def remove_bg_safe(image_bytes):
-
-    # 1. Try local unlimited AI remover
     try:
         return remove(image_bytes)
     except Exception as e:
-        print("local rembg error:", e)
+        print("remove failed:", e)
+        return internal_white_bg(image_bytes)
 
-    # 2. Optional remove.bg API
-    if REMOVEBG_API_KEY:
-        try:
-            r = requests.post(
-                "https://api.remove.bg/v1.0/removebg",
-                headers={"X-Api-Key": REMOVEBG_API_KEY},
-                files={"image_file": ("image.png", image_bytes)},
-                data={"size": "auto"},
-                timeout=30
-            )
-            if r.status_code == 200:
-                return r.content
-        except Exception as e:
-            print("remove.bg api error:", e)
-
-    # 3. fallback
-    return internal_white_bg(image_bytes)
 
 # ---------------- IMAGE HELPERS ----------------
 def smart_crop_rgba(img):
@@ -181,3 +163,4 @@ async def removebg_test(file: UploadFile = File(...)):
     img_bytes = await file.read()
     out = remove_bg_safe(img_bytes)
     return StreamingResponse(io.BytesIO(out), media_type="image/png")
+
