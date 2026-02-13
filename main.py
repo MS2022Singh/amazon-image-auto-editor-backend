@@ -24,20 +24,18 @@ def envtest():
 # ---------------- INTERNAL WHITE BG ----------------
 def internal_white_bg(img_bytes):
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-    datas = img.getdata()
-    newData = []
-    for item in datas:
-        if item[0] > 220 and item[1] > 220 and item[2] > 220:
-            newData.append((255,255,255,0))
-        else:
-            newData.append(item)
-    img.putdata(newData)
 
-    bg = Image.new("RGBA", img.size, (255,255,255,255))
-    bg.paste(img, mask=img.split()[3])
+    # create white canvas
+    white_bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
+
+    # simple brightness mask (basic subject isolation)
+    gray = img.convert("L")
+    mask = gray.point(lambda x: 0 if x > 235 else 255)
+
+    white_bg.paste(img, (0, 0), mask)
 
     out = io.BytesIO()
-    bg.save(out, "PNG")
+    white_bg.convert("RGB").save(out, "JPEG", quality=95)
     return out.getvalue()
 
 # ---------------- REMOVE BG SAFE ----------------
@@ -178,5 +176,6 @@ async def removebg_test(file: UploadFile = File(...)):
     img_bytes = await file.read()
     out = remove_bg_safe(img_bytes)
     return StreamingResponse(io.BytesIO(out), media_type="image/png")
+
 
 
