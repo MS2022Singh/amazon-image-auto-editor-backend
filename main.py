@@ -56,8 +56,19 @@ def remove_bg_safe(image_bytes):
 def smart_crop_rgba(img):
     if img.mode != "RGBA":
         return img
+
     bbox = img.split()[-1].getbbox()
-    return img.crop(bbox) if bbox else img
+    if not bbox:
+        return img
+
+    margin = 120   # preserve chain / thin objects
+
+    left = max(0, bbox[0] - margin)
+    top = max(0, bbox[1] - margin)
+    right = min(img.width, bbox[2] + margin)
+    bottom = min(img.height, bbox[3] + margin)
+
+    return img.crop((left, top, right, bottom))
 
 def enhance(img):
     img = ImageEnhance.Contrast(img).enhance(1.08)
@@ -165,3 +176,4 @@ async def removebg_test(file: UploadFile = File(...)):
     img_bytes = await file.read()
     out = remove_bg_safe(img_bytes)
     return StreamingResponse(io.BytesIO(out), media_type="image/png")
+
