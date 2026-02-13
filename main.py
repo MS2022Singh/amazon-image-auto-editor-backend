@@ -98,6 +98,10 @@ def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
     img = Image.open(io.BytesIO(transparent)).convert("RGBA")
 
     img = smart_crop_rgba(img)
+
+    if img.width == 0 or img.height == 0:
+    return internal_white_bg(img_bytes)
+
     img = remove_reflection(img)
     img = auto_white_balance(img)
 
@@ -182,5 +186,6 @@ async def removebg_test(file: UploadFile = File(...)):
     img_bytes = await file.read()
     out = remove_bg_safe(img_bytes)
     return StreamingResponse(io.BytesIO(out), media_type="image/png")
+
 
 
