@@ -14,7 +14,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-REMOVEBG_API_KEY = os.getenv("REMOVEBG_API_KEY")
+REMOVEBG_API_KEY = os.getenv("REMOVEBG_API_KEY", "").strip()
 
 # ---------------- ENV TEST ----------------
 @app.get("/envtest")
@@ -61,6 +61,7 @@ def remove_bg_safe(image_bytes):
             return internal_white_bg(image_bytes)
     except:
         return internal_white_bg(image_bytes)
+print("remove.bg status:", r.status_code)
 
 # ---------------- IMAGE HELPERS ----------------
 def smart_crop_rgba(img):
@@ -192,6 +193,7 @@ async def removebg_test(file: UploadFile = File(...)):
     img_bytes = await file.read()
     out = remove_bg_safe(img_bytes)
     return StreamingResponse(io.BytesIO(out), media_type="image/png")
+
 
 
 
