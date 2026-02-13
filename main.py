@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-import requests, io, os, zipfile
+import io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
 from rembg import remove
 
@@ -17,39 +17,26 @@ app.add_middleware(
 
 REMOVEBG_API_KEY = os.getenv("REMOVEBG_API_KEY","").strip()
 
-# ---------------- ENV TEST ----------------
-@app.get("/envtest")
-def envtest():
-    return {"removebg_key_present": bool(REMOVEBG_API_KEY)}
-
 # ---------------- INTERNAL WHITE BG ----------------
 def internal_white_bg(img_bytes):
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-
-    white_bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
-
+    white_bg = Image.new("RGBA", img.size, (255,255,255,255))
     gray = img.convert("L")
     mask = gray.point(lambda x: 0 if x > 235 else 255)
-
-    white_bg.paste(img, (0, 0), mask)
+    white_bg.paste(img,(0,0),mask)
 
     out = io.BytesIO()
-    white_bg.convert("RGB").save(out, "JPEG", quality=95)
+    white_bg.convert("RGB").save(out,"JPEG",quality=95)
     return out.getvalue()
 
 # ---------------- REMOVE BG SAFE ----------------
 def remove_bg_safe(image_bytes):
     try:
         output = remove(image_bytes)
-
         if not output or len(output) < 1000:
-            print("rembg returned empty, using white bg fallback")
             return internal_white_bg(image_bytes)
-
         return output
-
-    except Exception as e:
-        print("rembg local error:", e)
+    except:
         return internal_white_bg(image_bytes)
 
 # ---------------- IMAGE HELPERS ----------------
@@ -61,12 +48,11 @@ def smart_crop_rgba(img):
     if not bbox:
         return img
 
-    margin = 120   # preserve chain / thin objects
-
-    left = max(0, bbox[0] - margin)
-    top = max(0, bbox[1] - margin)
-    right = min(img.width, bbox[2] + margin)
-    bottom = min(img.height, bbox[3] + margin)
+    margin = 120
+    left = max(0, bbox[0]-margin)
+    top = max(0, bbox[1]-margin)
+    right = min(img.width, bbox[2]+margin)
+    bottom = min(img.height, bbox[3]+margin)
 
     return img.crop((left, top, right, bottom))
 
@@ -100,7 +86,7 @@ def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
     img = smart_crop_rgba(img)
 
     if img.width == 0 or img.height == 0:
-    return internal_white_bg(img_bytes)
+        return internal_white_bg(img_bytes)
 
     img = remove_reflection(img)
     img = auto_white_balance(img)
@@ -110,16 +96,14 @@ def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
 
     w, h = img.size
 
-# safety fix (prevents 502 crash)
-if w == 0 or h == 0:
-    return internal_white_bg(img_bytes)
+    if w == 0 or h == 0:
+        return internal_white_bg(img_bytes)
 
-scale = min(target / w, target / h)
-img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-
+    scale = min(target / w, target / h)
+    img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
     bg_rgb = resolve_background(bg_color)
-    background = Image.new("RGBA", (CANVAS, CANVAS), (*bg_rgb,255))
+    background = Image.new("RGBA",(CANVAS,CANVAS),(*bg_rgb,255))
 
     x = (CANVAS - img.width)//2
     y = (CANVAS - img.height)//2
@@ -178,11 +162,5 @@ async def batch(files: list[UploadFile] = File(...)):
             final = process_pipeline(img_bytes)
             zipf.writestr(f"amazon_{f.filename}",final)
     zip_buffer.seek(0)
-    return StreamingResponse(zip_buffer, media_type="application/zip", headers={"Content-Disposition":"attachment; filename=amazon_images.zip"})
-
-# ---------------- REMOVE BG TEST ----------------
-@app.post("/removebg-test")
-async def removebg_test(file: UploadFile = File(...)):
-    img_bytes = await file.read()
-    out = remove_bg_safe(img_bytes)
-    return StreamingResponse(io.BytesIO(out), media_type="image/png")
+    return StreamingResponse(zip_buffer, media_type="application/zip",
+        headers={"Content-Disposition":"attachment; filename=amazon_images.zip"})
