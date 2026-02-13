@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests, io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
@@ -15,6 +15,11 @@ app.add_middleware(
 )
 
 REMOVEBG_API_KEY = os.getenv("REMOVEBG_API_KEY")
+
+# ---------------- ENV TEST ----------------
+@app.get("/envtest")
+def envtest():
+    return {"removebg_key_present": bool(REMOVEBG_API_KEY)}
 
 # ---------------- REMOVE BG SAFE ----------------
 def internal_white_bg(img_bytes):
@@ -55,17 +60,14 @@ def smart_crop_rgba(img):
     bbox = img.split()[-1].getbbox()
     return img.crop(bbox) if bbox else img
 
-def remove_reflection(img):
-    return img.filter(ImageFilter.SMOOTH_MORE)
+def enhance(img):
+    img = ImageEnhance.Contrast(img).enhance(1.08)
+    img = ImageEnhance.Sharpness(img).enhance(1.15)
+    return img
 
 def auto_white_balance(img):
     img = ImageEnhance.Color(img).enhance(1.05)
     img = ImageEnhance.Brightness(img).enhance(1.03)
-    return img
-
-def enhance(img):
-    img = ImageEnhance.Contrast(img).enhance(1.08)
-    img = ImageEnhance.Sharpness(img).enhance(1.15)
     return img
 
 def resolve_background(bg_color):
@@ -83,7 +85,6 @@ def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
     img = Image.open(io.BytesIO(transparent)).convert("RGBA")
 
     img = smart_crop_rgba(img)
-    img = remove_reflection(img)
     img = auto_white_balance(img)
 
     CANVAS = 2000
@@ -167,3 +168,10 @@ async def batch(files: list[UploadFile] = File(...)):
         media_type="application/zip",
         headers={"Content-Disposition":"attachment; filename=amazon_images.zip"}
     )
+
+# ---------------- REMOVE BG TEST ----------------
+@app.post("/removebg-test")
+async def removebg_test(file: UploadFile = File(...)):
+    img_bytes = await file.read()
+    out = remove_bg_safe(img_bytes)
+    return StreamingResponse(io.BytesIO(out), media_type="image/png")
