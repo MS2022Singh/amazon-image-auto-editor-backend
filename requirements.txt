@@ -4,4 +4,3 @@ uvicorn
 pillow
 requests
 python-multipart
-rembg
