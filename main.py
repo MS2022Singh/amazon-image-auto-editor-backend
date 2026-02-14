@@ -1,16 +1,11 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-import requests, io, os, zipfile
+import io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
-from rembg import remove
+from rembg import remove, new_session
 
 app = FastAPI(title="Amazon Image Auto Editor")
-
-# -------- ROOT (Railway health check fix) --------
-@app.get("/")
-def root():
-    return {"status": "Amazon Image Auto Editor running"}
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,11 +15,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-REMOVEBG_API_KEY = os.getenv("REMOVEBG_API_KEY","").strip()
+# ----------- REMBG SESSION (VERY IMPORTANT) -----------
+rembg_session = new_session()
 
-@app.get("/envtest")
-def envtest():
-    return {"removebg_key_present": bool(REMOVEBG_API_KEY)}
+@app.on_event("startup")
+def warmup():
+    print("rembg model ready")
 
 # ---------------- INTERNAL WHITE BG ----------------
 def internal_white_bg(img_bytes):
@@ -33,7 +29,6 @@ def internal_white_bg(img_bytes):
     gray = img.convert("L")
     mask = gray.point(lambda x: 0 if x > 235 else 255)
     white_bg.paste(img, (0, 0), mask)
-
     out = io.BytesIO()
     white_bg.convert("RGB").save(out, "JPEG", quality=95)
     return out.getvalue()
@@ -41,28 +36,25 @@ def internal_white_bg(img_bytes):
 # ---------------- REMOVE BG SAFE ----------------
 def remove_bg_safe(image_bytes):
     try:
-        output = remove(image_bytes)
+        output = remove(image_bytes, session=rembg_session)
         if not output or len(output) < 1000:
             return internal_white_bg(image_bytes)
         return output
     except Exception:
         return internal_white_bg(image_bytes)
 
-# ---------------- IMAGE HELPERS ----------------
+# ---------------- HELPERS ----------------
 def smart_crop_rgba(img):
     if img.mode != "RGBA":
         return img
-
     bbox = img.split()[-1].getbbox()
     if not bbox:
         return img
-
     margin = 120
-    left = max(0, bbox[0] - margin)
-    top = max(0, bbox[1] - margin)
-    right = min(img.width, bbox[2] + margin)
-    bottom = min(img.height, bbox[3] + margin)
-
+    left = max(0, bbox[0]-margin)
+    top = max(0, bbox[1]-margin)
+    right = min(img.width, bbox[2]+margin)
+    bottom = min(img.height, bbox[3]+margin)
     return img.crop((left, top, right, bottom))
 
 def enhance(img):
@@ -94,7 +86,6 @@ def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
 
     img = smart_crop_rgba(img)
 
-    # crash protection
     if img.width == 0 or img.height == 0:
         return internal_white_bg(img_bytes)
 
@@ -154,13 +145,6 @@ async def preview(file: UploadFile = File(...), bg_color: str = Form("white"), a
     image_bytes = await file.read()
     final = process_pipeline(image_bytes, bg_color, add_shadow)
     return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
-
-# ---------------- VALIDATE ----------------
-@app.post("/process/validate")
-async def validate(file: UploadFile = File(...)):
-    img = Image.open(io.BytesIO(await file.read()))
-    w,h = img.size
-    return {"square": w==h, "resolution_ok": w>=1600}
 
 # ---------------- BATCH ----------------
 @app.post("/process/batch")
