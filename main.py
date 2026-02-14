@@ -49,7 +49,7 @@ def auto_white_balance(img):
 def resolve_background(bg_color):
     presets = {
         "white": (255,255,255),
-        "black": (0,0 showing), # fix later
+        "black": (0,0,0),
         "lightgrey": (240,240,240)
     }
     return presets.get(bg_color,(255,255,255))
@@ -113,3 +113,4 @@ async def batch(files: list[UploadFile] = File(...)):
 
     zip_buffer.seek(0)
     return StreamingResponse(zip_buffer, media_type="application/zip")
+
