@@ -1,9 +1,9 @@
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import io, os, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
-from rembg import remove
+from rembg import remove, new_session
 
 app = FastAPI(title="Amazon Image Auto Editor")
 
@@ -15,55 +15,90 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------- ROOT ----------------
-@app.get("/")
-def root():
-    return {"status": "Amazon Image Auto Editor running"}
+# ---------------- REMBG SESSION CACHE ----------------
+REM_BG_SESSION = None
 
-# ---------------- ENV TEST ----------------
-@app.get("/envtest")
-def envtest():
-    return {"ok": True}
+def get_rembg_session():
+    global REM_BG_SESSION
+    if REM_BG_SESSION is None:
+        REM_BG_SESSION = new_session()
+    return REM_BG_SESSION
 
 # ---------------- INTERNAL WHITE BG ----------------
 def internal_white_bg(img_bytes):
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
     white_bg = Image.new("RGBA", img.size, (255,255,255,255))
-    white_bg.paste(img,(0,0),img)
-
+    gray = img.convert("L")
+    mask = gray.point(lambda x: 0 if x > 235 else 255)
+    white_bg.paste(img,(0,0),mask)
     out = io.BytesIO()
     white_bg.convert("RGB").save(out,"JPEG",quality=95)
     return out.getvalue()
 
-# ---------------- SAFE BG REMOVE ----------------
+# ---------------- REMOVE BG SAFE ----------------
 def remove_bg_safe(image_bytes):
     try:
-        result = remove(image_bytes)
-        if not result or len(result) < 1000:
+        session = get_rembg_session()
+        output = remove(image_bytes, session=session)
+
+        if not output or len(output) < 1000:
             return internal_white_bg(image_bytes)
-        return result
-    except:
+
+        return output
+    except Exception:
         return internal_white_bg(image_bytes)
 
 # ---------------- HELPERS ----------------
+def smart_crop_rgba(img):
+    if img.mode != "RGBA":
+        return img
+
+    bbox = img.split()[-1].getbbox()
+    if not bbox:
+        return img
+
+    margin = 120
+    left = max(0, bbox[0]-margin)
+    top = max(0, bbox[1]-margin)
+    right = min(img.width, bbox[2]+margin)
+    bottom = min(img.height, bbox[3]+margin)
+
+    return img.crop((left,top,right,bottom))
+
 def enhance(img):
     img = ImageEnhance.Contrast(img).enhance(1.08)
     img = ImageEnhance.Sharpness(img).enhance(1.15)
     return img
 
+def auto_white_balance(img):
+    img = ImageEnhance.Color(img).enhance(1.05)
+    img = ImageEnhance.Brightness(img).enhance(1.03)
+    return img
+
+def remove_reflection(img):
+    return img.filter(ImageFilter.SMOOTH_MORE)
+
 def resolve_background(bg_color):
     presets = {
-        "white": (255,255,255),
-        "black": (0,0,0),
-        "lightgrey": (240,240,240)
+        "white":(255,255,255),
+        "black":(0,0,0),
+        "lightgrey":(240,240,240)
     }
     return presets.get(bg_color,(255,255,255))
 
-# ---------------- PIPELINE ----------------
+# ---------------- CORE PIPELINE ----------------
 def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
 
     transparent = remove_bg_safe(img_bytes)
     img = Image.open(io.BytesIO(transparent)).convert("RGBA")
+
+    img = smart_crop_rgba(img)
+
+    if img.width == 0 or img.height == 0:
+        return internal_white_bg(img_bytes)
+
+    img = remove_reflection(img)
+    img = auto_white_balance(img)
 
     CANVAS = 2000
     target = int(CANVAS*0.9)
@@ -84,7 +119,7 @@ def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
 
     if add_shadow == 1:
         shadow = background.filter(ImageFilter.GaussianBlur(35))
-        background = Image.blend(background, shadow, 0.15)
+        background = Image.blend(background,shadow,0.15)
 
     background = enhance(background.convert("RGB"))
 
@@ -107,7 +142,7 @@ def compress_to_limit(img_bytes, max_kb=9000):
 @app.post("/process")
 async def process_image(file: UploadFile = File(...), bg_color: str = Form("white"), add_shadow: int = Form(0)):
     image_bytes = await file.read()
-    final = process_pipeline(image_bytes, bg_color, add_shadow)
+    final = process_pipeline(image_bytes,bg_color,add_shadow)
     final = compress_to_limit(final)
     return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
 
@@ -115,15 +150,8 @@ async def process_image(file: UploadFile = File(...), bg_color: str = Form("whit
 @app.post("/process/preview")
 async def preview(file: UploadFile = File(...), bg_color: str = Form("white"), add_shadow: int = Form(0)):
     image_bytes = await file.read()
-    final = process_pipeline(image_bytes, bg_color, add_shadow)
+    final = process_pipeline(image_bytes,bg_color,add_shadow)
     return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
-
-# ---------------- VALIDATE ----------------
-@app.post("/process/validate")
-async def validate(file: UploadFile = File(...)):
-    img = Image.open(io.BytesIO(await file.read()))
-    w,h = img.size
-    return {"square": w==h, "resolution_ok": w>=1600}
 
 # ---------------- BATCH ----------------
 @app.post("/process/batch")
@@ -134,7 +162,5 @@ async def batch(files: list[UploadFile] = File(...)):
             img_bytes = await f.read()
             final = process_pipeline(img_bytes)
             zipf.writestr(f"amazon_{f.filename}",final)
-
     zip_buffer.seek(0)
-    return StreamingResponse(zip_buffer, media_type="application/zip",
-        headers={"Content-Disposition":"attachment; filename=amazon_images.zip"})
+    return StreamingResponse(zip_buffer, media_type="application/zip")
