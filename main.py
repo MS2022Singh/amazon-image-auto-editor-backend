@@ -18,6 +18,11 @@ app.add_middleware(
 # ---------------- REMBG SESSION CACHE ----------------
 REM_BG_SESSION = None
 
+@app.on_event("startup")
+def preload_model():
+    global REM_BG_SESSION
+    REM_BG_SESSION = new_session()
+
 def get_rembg_session():
     global REM_BG_SESSION
     if REM_BG_SESSION is None:
