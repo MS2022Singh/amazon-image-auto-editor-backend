@@ -165,3 +165,4 @@ async def batch(files: list[UploadFile] = File(...)):
             zipf.writestr(f"amazon_{f.filename}",final)
     zip_buffer.seek(0)
     return StreamingResponse(zip_buffer, media_type="application/zip")
+
