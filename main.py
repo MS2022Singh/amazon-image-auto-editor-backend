@@ -58,7 +58,7 @@ def smart_crop_rgba(img):
     if not bbox:
         return img
 
-    margin = 120
+    margin = int(max(img.width, img.height) * 0.20)  # dynamic margin
     left = max(0, bbox[0]-margin)
     top = max(0, bbox[1]-margin)
     right = min(img.width, bbox[2]+margin)
@@ -165,4 +165,5 @@ async def batch(files: list[UploadFile] = File(...)):
             zipf.writestr(f"amazon_{f.filename}",final)
     zip_buffer.seek(0)
     return StreamingResponse(zip_buffer, media_type="application/zip")
+
 
