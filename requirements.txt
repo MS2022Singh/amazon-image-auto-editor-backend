@@ -3,5 +3,6 @@ uvicorn
 pillow
 requests
 python-multipart
-rembg
+rembg[gpu]==2.0.50
 onnxruntime
+
