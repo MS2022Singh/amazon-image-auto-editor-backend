@@ -40,7 +40,7 @@ def internal_white_bg(img_bytes):
 def remove_bg_safe(image_bytes):
     try:
         session = get_rembg_session()
-        output = remove(image_bytes, session=session)
+        output = remove(image_bytes)
 
         if not output or len(output) < 1000:
             return internal_white_bg(image_bytes)
@@ -165,5 +165,6 @@ async def batch(files: list[UploadFile] = File(...)):
             zipf.writestr(f"amazon_{f.filename}",final)
     zip_buffer.seek(0)
     return StreamingResponse(zip_buffer, media_type="application/zip")
+
 
 
