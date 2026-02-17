@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import io, os, zipfile
+import io, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
 from rembg import remove, new_session
 
@@ -47,6 +47,7 @@ def remove_bg_safe(image_bytes):
         return output
     except Exception:
         return internal_white_bg(image_bytes)
+
 # ---------------- HELPERS ----------------
 def smart_crop_rgba(img):
     if img.mode != "RGBA":
@@ -56,7 +57,7 @@ def smart_crop_rgba(img):
     if not bbox:
         return img
 
-    margin = int(max(img.width, img.height) * 0.35)  # dynamic margin
+    margin = int(max(img.width, img.height) * 0.35)
     left = max(0, bbox[0]-margin)
     top = max(0, bbox[1]-margin)
     right = min(img.width, bbox[2]+margin)
@@ -148,9 +149,12 @@ async def process_image(file: UploadFile = File(...), bg_color: str = Form("whit
 # ---------------- PREVIEW ----------------
 @app.post("/process/preview")
 async def preview(file: UploadFile = File(...), bg_color: str = Form("white"), add_shadow: int = Form(0)):
-    image_bytes = await file.read()
-    final = process_pipeline(image_bytes,bg_color,add_shadow)
-    return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
+    try:
+        image_bytes = await file.read()
+        final = process_pipeline(image_bytes,bg_color,add_shadow)
+        return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
+    except Exception as e:
+        return JSONResponse({"error":str(e)}, status_code=500)
 
 # ---------------- BATCH ----------------
 @app.post("/process/batch")
