@@ -40,7 +40,7 @@ def internal_white_bg(img_bytes):
 def remove_bg_safe(image_bytes):
     try:
         session = get_rembg_session()
-        output = remove(image_bytes)
+        output = remove(image_bytes, session=session)
 
         if not output or len(output) < 1000:
             return internal_white_bg(image_bytes)
@@ -48,7 +48,6 @@ def remove_bg_safe(image_bytes):
         return output
     except Exception:
         return internal_white_bg(image_bytes)
-
 # ---------------- HELPERS ----------------
 def smart_crop_rgba(img):
     if img.mode != "RGBA":
@@ -58,7 +57,7 @@ def smart_crop_rgba(img):
     if not bbox:
         return img
 
-    margin = int(max(img.width, img.height) * 0.20)  # dynamic margin
+    margin = int(max(img.width, img.height) * 0.35)  # dynamic margin
     left = max(0, bbox[0]-margin)
     top = max(0, bbox[1]-margin)
     right = min(img.width, bbox[2]+margin)
@@ -165,6 +164,7 @@ async def batch(files: list[UploadFile] = File(...)):
             zipf.writestr(f"amazon_{f.filename}",final)
     zip_buffer.seek(0)
     return StreamingResponse(zip_buffer, media_type="application/zip")
+
 
 
 
