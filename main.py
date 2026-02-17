@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -164,7 +163,3 @@ async def batch(files: list[UploadFile] = File(...)):
             zipf.writestr(f"amazon_{f.filename}",final)
     zip_buffer.seek(0)
     return StreamingResponse(zip_buffer, media_type="application/zip")
-
-
-
-
