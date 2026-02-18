@@ -153,13 +153,40 @@ async def process_image(file: UploadFile = File(...), bg_color: str = Form("whit
 
 # ---------------- PREVIEW ----------------
 @app.post("/process/preview")
-async def preview(file: UploadFile = File(...), bg_color: str = Form("white"), add_shadow: int = Form(0)):
+async def process_preview(
+    file: UploadFile = File(...),
+    bg_color: str = Form("white"),
+    add_shadow: int = Form(0),
+):
     try:
-        image_bytes = await file.read()
-        final = process_pipeline(image_bytes,bg_color,add_shadow)
-        return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
+        contents = await file.read()
+        img = Image.open(io.BytesIO(contents)).convert("RGBA")
+
+        # -------- SAFE background removal ----------
+        try:
+            from rembg import remove
+            img = remove(img)
+        except Exception as e:
+            print("Rembg skipped:", e)
+
+        # -------- Background apply ----------
+        background = Image.new("RGBA", img.size, bg_color)
+        background.paste(img, (0, 0), img)
+
+        # -------- Optional shadow ----------
+        if add_shadow:
+            shadow = background.filter(ImageFilter.GaussianBlur(12))
+            background = Image.alpha_composite(shadow, background)
+
+        buf = io.BytesIO()
+        background.convert("RGB").save(buf, format="JPEG", quality=90)
+        buf.seek(0)
+
+        return StreamingResponse(buf, media_type="image/jpeg")
+
     except Exception as e:
-        return JSONResponse({"error":str(e)}, status_code=500)
+        print("Preview error:", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ---------------- BATCH ----------------
 @app.post("/process/batch")
@@ -176,3 +203,4 @@ async def batch(files: list[UploadFile] = File(...)):
 @app.get("/")
 def root():
     return {"status": "ok"}
+
