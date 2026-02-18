@@ -204,3 +204,4 @@ async def batch(files: list[UploadFile] = File(...)):
 def root():
     return {"status": "ok"}
 
+
