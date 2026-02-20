@@ -165,7 +165,9 @@ async def process_preview(
         # -------- SAFE background removal ----------
         try:
             from rembg import remove
-            img = remove(img)
+           session = get_rembg_session()
+           img_bytes = remove(contents, session-session)
+           img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
         except Exception as e:
             print("Rembg skipped:", e)
 
@@ -203,5 +205,6 @@ async def batch(files: list[UploadFile] = File(...)):
 @app.get("/")
 def root():
     return {"status": "ok"}
+
 
 
