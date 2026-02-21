@@ -1,8 +1,9 @@
 fastapi
 uvicorn
 pillow
+rembg
+onnxruntime
+numpy
+opencv-python-headless
 requests
 python-multipart
-rembg[gpu]==2.0.50
-onnxruntime
-
