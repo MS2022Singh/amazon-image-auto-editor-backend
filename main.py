@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import io, zipfile
@@ -32,12 +32,12 @@ def get_rembg_session():
 # ---------------- INTERNAL WHITE BG ----------------
 def internal_white_bg(img_bytes):
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-    white_bg = Image.new("RGBA", img.size, (255,255,255,255))
+    white_bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
     gray = img.convert("L")
     mask = gray.point(lambda x: 0 if x > 235 else 255)
-    white_bg.paste(img,(0,0),mask)
+    white_bg.paste(img, (0, 0), mask)
     out = io.BytesIO()
-    white_bg.convert("RGB").save(out,"JPEG",quality=95)
+    white_bg.convert("RGB").save(out, "JPEG", quality=95)
     return out.getvalue()
 
 # ---------------- REMOVE BG SAFE ----------------
@@ -63,12 +63,12 @@ def smart_crop_rgba(img):
         return img
 
     margin = int(max(img.width, img.height) * 0.35)
-    left = max(0, bbox[0]-margin)
-    top = max(0, bbox[1]-margin)
-    right = min(img.width, bbox[2]+margin)
-    bottom = min(img.height, bbox[3]+margin)
+    left = max(0, bbox[0] - margin)
+    top = max(0, bbox[1] - margin)
+    right = min(img.width, bbox[2] + margin)
+    bottom = min(img.height, bbox[3] + margin)
 
-    return img.crop((left,top,right,bottom))
+    return img.crop((left, top, right, bottom))
 
 def enhance(img):
     img = ImageEnhance.Contrast(img).enhance(1.08)
@@ -85,11 +85,11 @@ def remove_reflection(img):
 
 def resolve_background(bg_color):
     presets = {
-        "white":(255,255,255),
-        "black":(0,0,0),
-        "lightgrey":(240,240,240)
+        "white": (255, 255, 255),
+        "black": (0, 0, 0),
+        "lightgrey": (240, 240, 240),
     }
-    return presets.get(bg_color,(255,255,255))
+    return presets.get(bg_color, (255, 255, 255))
 
 # ---------------- CORE PIPELINE ----------------
 def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
@@ -106,30 +106,30 @@ def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
     img = auto_white_balance(img)
 
     CANVAS = 2000
-    target = int(CANVAS*0.9)
+    target = int(CANVAS * 0.9)
 
-    w,h = img.size
+    w, h = img.size
     if w == 0 or h == 0:
         return internal_white_bg(img_bytes)
 
-    scale = min(target/w, target/h)
-    img = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
+    scale = min(target / w, target / h)
+    img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
     bg_rgb = resolve_background(bg_color)
-    background = Image.new("RGBA",(CANVAS,CANVAS),(*bg_rgb,255))
+    background = Image.new("RGBA", (CANVAS, CANVAS), (*bg_rgb, 255))
 
-    x = (CANVAS-img.width)//2
-    y = (CANVAS-img.height)//2
-    background.paste(img,(x,y),img)
+    x = (CANVAS - img.width) // 2
+    y = (CANVAS - img.height) // 2
+    background.paste(img, (x, y), img)
 
     if add_shadow == 1:
         shadow = background.filter(ImageFilter.GaussianBlur(35))
-        background = Image.blend(background,shadow,0.15)
+        background = Image.blend(background, shadow, 0.15)
 
     background = enhance(background.convert("RGB"))
 
     out = io.BytesIO()
-    background.save(out,"JPEG",quality=95,optimize=True)
+    background.save(out, "JPEG", quality=95, optimize=True)
     return out.getvalue()
 
 # ---------------- SIZE LIMIT ----------------
@@ -138,16 +138,20 @@ def compress_to_limit(img_bytes, max_kb=9000):
     q = 95
     while True:
         buf = io.BytesIO()
-        img.save(buf,"JPEG",quality=q,optimize=True)
-        if len(buf.getvalue())/1024 <= max_kb or q <= 70:
+        img.save(buf, "JPEG", quality=q, optimize=True)
+        if len(buf.getvalue()) / 1024 <= max_kb or q <= 70:
             return buf.getvalue()
         q -= 2
 
 # ---------------- PROCESS ----------------
 @app.post("/process")
-async def process_image(file: UploadFile = File(...), bg_color: str = Form("white"), add_shadow: int = Form(0)):
+async def process_image(
+    file: UploadFile = File(...),
+    bg_color: str = Form("white"),
+    add_shadow: int = Form(0),
+):
     image_bytes = await file.read()
-    final = process_pipeline(image_bytes,bg_color,add_shadow)
+    final = process_pipeline(image_bytes, bg_color, add_shadow)
     final = compress_to_limit(final)
     return StreamingResponse(io.BytesIO(final), media_type="image/jpeg")
 
@@ -160,28 +164,21 @@ async def process_preview(
 ):
     try:
         contents = await file.read()
-        img = Image.open(io.BytesIO(contents)).convert("RGBA")
 
-        # -------- SAFE background removal ----------
-        try:
-            from rembg import remove
-           session = get_rembg_session()
-           img_bytes = remove(contents, session-session)
-           img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-        except Exception as e:
-            print("Rembg skipped:", e)
+        session = get_rembg_session()
+        img_bytes = remove(contents, session=session)
+        img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
 
-        # -------- Background apply ----------
-        background = Image.new("RGBA", img.size, bg_color)
+        bg_rgb = resolve_background(bg_color)
+        background = Image.new("RGBA", img.size, (*bg_rgb, 255))
         background.paste(img, (0, 0), img)
 
-        # -------- Optional shadow ----------
-        if add_shadow:
+        if add_shadow == 1:
             shadow = background.filter(ImageFilter.GaussianBlur(12))
             background = Image.alpha_composite(shadow, background)
 
         buf = io.BytesIO()
-        background.convert("RGB").save(buf, format="JPEG", quality=90)
+        background.convert("RGB").save(buf, "JPEG", quality=90)
         buf.seek(0)
 
         return StreamingResponse(buf, media_type="image/jpeg")
@@ -194,17 +191,15 @@ async def process_preview(
 @app.post("/process/batch")
 async def batch(files: list[UploadFile] = File(...)):
     zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer,"w") as zipf:
+    with zipfile.ZipFile(zip_buffer, "w") as zipf:
         for f in files:
             img_bytes = await f.read()
             final = process_pipeline(img_bytes)
-            zipf.writestr(f"amazon_{f.filename}",final)
+            zipf.writestr(f"amazon_{f.filename}", final)
+
     zip_buffer.seek(0)
     return StreamingResponse(zip_buffer, media_type="application/zip")
 
 @app.get("/")
 def root():
     return {"status": "ok"}
-
-
-
