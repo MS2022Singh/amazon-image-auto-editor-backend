@@ -1,9 +1,3 @@
 fastapi
 uvicorn
 pillow
-rembg
-onnxruntime
-numpy
-opencv-python-headless
-requests
-python-multipart
