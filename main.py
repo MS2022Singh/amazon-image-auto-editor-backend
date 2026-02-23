@@ -1,11 +1,10 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import io, zipfile
 from PIL import Image, ImageEnhance, ImageFilter
-from rembg import remove
 
-app = FastAPI(title="Amazon Image Auto Editor")
+app = FastAPI(title="Amazon Image Optimizer")
 
 # ---------------- CORS ----------------
 app.add_middleware(
@@ -16,148 +15,61 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------- SAFE BG FALLBACK ----------------
-def internal_white_bg(img_bytes):
-    img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+# ---------------- HELPERS ----------------
+def auto_white_bg(img):
+    img = img.convert("RGBA")
     white_bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
     white_bg.paste(img, (0, 0), img)
-    out = io.BytesIO()
-    white_bg.convert("RGB").save(out, "JPEG", quality=95)
-    return out.getvalue()
-
-# ---------------- REMOVE BG SAFE ----------------
-def remove_bg_safe(image_bytes):
-    try:
-        output = remove(image_bytes)
-
-        # If output suspiciously small → fallback
-        if not output or len(output) < 1000:
-            return internal_white_bg(image_bytes)
-
-        return output
-
-    except Exception:
-        return internal_white_bg(image_bytes)
-
-# ---------------- IMAGE HELPERS ----------------
-def smart_crop_rgba(img):
-    if img.mode != "RGBA":
-        return img
-
-    bbox = img.split()[-1].getbbox()
-    if not bbox:
-        return img
-
-    margin = int(max(img.width, img.height) * 0.25)
-
-    left = max(0, bbox[0] - margin)
-    top = max(0, bbox[1] - margin)
-    right = min(img.width, bbox[2] + margin)
-    bottom = min(img.height, bbox[3] + margin)
-
-    return img.crop((left, top, right, bottom))
+    return white_bg.convert("RGB")
 
 def enhance(img):
-    img = ImageEnhance.Contrast(img).enhance(1.08)
-    img = ImageEnhance.Sharpness(img).enhance(1.12)
-    return img
-
-def auto_white_balance(img):
-    img = ImageEnhance.Color(img).enhance(1.05)
+    img = ImageEnhance.Contrast(img).enhance(1.06)
+    img = ImageEnhance.Sharpness(img).enhance(1.10)
     img = ImageEnhance.Brightness(img).enhance(1.03)
     return img
 
-def resolve_background(bg_color):
-    presets = {
-        "white": (255, 255, 255),
-        "black": (0, 0, 0),
-        "lightgrey": (240, 240, 240),
-    }
-    return presets.get(bg_color, (255, 255, 255))
+def smart_crop(img):
+    bbox = img.getbbox()
+    if bbox:
+        return img.crop(bbox)
+    return img
 
 # ---------------- CORE PIPELINE ----------------
-def process_pipeline(img_bytes, bg_color="white", add_shadow=0):
+def process_pipeline(img_bytes):
 
-    transparent = remove_bg_safe(img_bytes)
-    img = Image.open(io.BytesIO(transparent)).convert("RGBA")
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
 
-    img = smart_crop_rgba(img)
-    img = auto_white_balance(img)
+    img = smart_crop(img)
+    img = auto_white_bg(img)
+    img = enhance(img)
 
     CANVAS = 2000
-    target = int(CANVAS * 0.9)
+    target = int(CANVAS * 0.85)
 
     w, h = img.size
-    if w == 0 or h == 0:
-        return internal_white_bg(img_bytes)
-
     scale = min(target / w, target / h)
     img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
-    bg_rgb = resolve_background(bg_color)
-    background = Image.new("RGBA", (CANVAS, CANVAS), (*bg_rgb, 255))
+    background = Image.new("RGB", (CANVAS, CANVAS), (255, 255, 255))
 
     x = (CANVAS - img.width) // 2
     y = (CANVAS - img.height) // 2
-    background.paste(img, (x, y), img)
 
-    if add_shadow == 1:
-        shadow = background.filter(ImageFilter.GaussianBlur(30))
-        background = Image.blend(background, shadow, 0.15)
-
-    final = enhance(background.convert("RGB"))
+    background.paste(img, (x, y))
 
     out = io.BytesIO()
-    final.save(out, "JPEG", quality=92, optimize=True)
+    background.save(out, "JPEG", quality=92, optimize=True)
     return out.getvalue()
-
-# ---------------- COMPRESS ----------------
-def compress_to_limit(img_bytes, max_kb=9000):
-    img = Image.open(io.BytesIO(img_bytes))
-    q = 92
-
-    while True:
-        buf = io.BytesIO()
-        img.save(buf, "JPEG", quality=q, optimize=True)
-
-        if len(buf.getvalue()) / 1024 <= max_kb or q <= 70:
-            return buf.getvalue()
-
-        q -= 3
 
 # ---------------- PROCESS ----------------
 @app.post("/process")
-async def process_image(
-    file: UploadFile = File(...),
-    bg_color: str = Form("white"),
-    add_shadow: int = Form(0),
-):
+async def process_image(file: UploadFile = File(...)):
     try:
         image_bytes = await file.read()
-        final = process_pipeline(image_bytes, bg_color, add_shadow)
-        final = compress_to_limit(final)
+        final = process_pipeline(image_bytes)
 
         return StreamingResponse(
             io.BytesIO(final),
-            media_type="image/jpeg"
-        )
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ---------------- PREVIEW ----------------
-@app.post("/process/preview")
-async def process_preview(
-    file: UploadFile = File(...),
-    bg_color: str = Form("white"),
-    add_shadow: int = Form(0),
-):
-    try:
-        image_bytes = await file.read()
-        preview = process_pipeline(image_bytes, bg_color, add_shadow)
-
-        return StreamingResponse(
-            io.BytesIO(preview),
             media_type="image/jpeg"
         )
 
